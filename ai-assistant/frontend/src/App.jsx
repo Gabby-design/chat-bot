@@ -436,10 +436,19 @@ function App() {
     setTools(prev => ({ ...prev, [toolName]: !prev[toolName] }));
   };
 
-  // Helper components - Glowing Arc
+  // Helper components - Glowing Arc (Large)
   const ThinkingArc = () => (
     <div className="flex items-center justify-center p-4">
       <div className="glowing-arc"></div>
+    </div>
+  );
+
+  // Helper components - Gemini-style thinking dots (Restored)
+  const LoadingDots = () => (
+    <div className="gemini-thinking-container">
+      <div className="gemini-dot"></div>
+      <div className="gemini-dot"></div>
+      <div className="gemini-dot"></div>
     </div>
   );
 
@@ -706,8 +715,12 @@ function App() {
                       <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-blue-400 via-cyan-400 to-purple-500 blur-sm opacity-50 animate-pulse" />
                     )}
                     {/* Avatar with glowing effect for AI */}
-                    <div className={`relative w-8 h-8 rounded-full flex items-center justify-center ${msg.role === 'assistant' ? 'bg-cyan-500 shadow-lg shadow-cyan-500/50' : 'bg-gray-600'}`}>
-                      <User size={18} className="text-white" />
+                    <div className={`relative w-8 h-8 rounded-full flex items-center justify-center ${msg.role === 'assistant' ? (isLoading && !msg.content ? 'bg-transparent shadow-none' : 'bg-cyan-500 shadow-lg shadow-cyan-500/50') : 'bg-gray-600'}`}>
+                      {msg.role === 'assistant' && isLoading && !msg.content ? (
+                        <div className="avatar-loader"></div>
+                      ) : (
+                        <User size={18} className="text-white" />
+                      )}
                     </div>
                   </div>
                   <div className={`flex-1 max-w-[85%] space-y-2 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
@@ -746,7 +759,7 @@ function App() {
                             {msg.content}
                           </ReactMarkdown>
                         ) : (
-                          <ThinkingArc />
+                          <LoadingDots />
                         )
                       ) : (
                         <p className="whitespace-pre-wrap">{msg.content}</p>

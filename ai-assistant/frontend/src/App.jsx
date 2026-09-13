@@ -117,7 +117,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('fast');
+  const [selectedModel, setSelectedModel] = useState('standard');
 
   const messagesEndRef = useRef(null);
   const eventSourceRef = useRef(null);
@@ -494,9 +494,20 @@ function App() {
         return;
       }
       console.error('Stream error', err);
+      let displayError = err.message || 'An unexpected error occurred';
+      if (
+        displayError.includes('503') ||
+        displayError.includes('high demand') ||
+        displayError.includes('UNAVAILABLE') ||
+        displayError.includes('Service Unavailable')
+      ) {
+        displayError = 'Google Gemini is temporarily experiencing high demand (503 Service Unavailable). Please try again in a few moments or click Regenerate.';
+      }
       setMessages((prev) => {
         const newMsgs = [...prev];
-        newMsgs[newMsgs.length - 1].content = 'Error: ' + err.message;
+        if (newMsgs.length > 0) {
+          newMsgs[newMsgs.length - 1].content = displayError.startsWith('Error:') ? displayError : 'Error: ' + displayError;
+        }
         return newMsgs;
       });
     } finally {
@@ -1325,7 +1336,7 @@ function App() {
                           ? 'Gemini 3.5 Flash Lite'
                           : selectedModel === 'advanced'
                           ? 'Gemini 3.7 Flash'
-                          : 'Gemini 3.6 Flash'}
+                          : 'Gemini 3.8 Flash'}
                       </span>
                       <ChevronDown size={13} />
                     </button>
@@ -1335,33 +1346,18 @@ function App() {
                       <div className="absolute bottom-full right-0 mb-2 w-64 bg-[#1e1f20] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 p-1.5 space-y-1">
                         <button
                           onClick={() => {
-                            setSelectedModel('fast');
-                            setIsModelSelectorOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
-                            selectedModel === 'fast' ? 'bg-[#4E80EE]/20 text-[#70CFFF] border border-[#4E80EE]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
-                          }`}
-                        >
-                          <div className="font-semibold text-xs flex items-center gap-1.5">
-                            <span>Gemini 3.5 Flash Lite</span>
-                            <span className="text-[10px] bg-[#4E80EE]/20 text-[#70CFFF] px-1.5 py-0.5 rounded-full font-mono">⚡ Ultra Fast</span>
-                          </div>
-                          <div className="text-[11px] text-[#8e918f] mt-0.5">Sub-second immediate answers & instant voice</div>
-                        </button>
-                        <button
-                          onClick={() => {
                             setSelectedModel('standard');
                             setIsModelSelectorOpen(false);
                           }}
                           className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
-                            selectedModel === 'standard' ? 'bg-[#9B72CF]/20 text-purple-300 border border-[#9B72CF]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
+                            selectedModel === 'standard' ? 'bg-[#4E80EE]/20 text-[#70CFFF] border border-[#4E80EE]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
                           }`}
                         >
                           <div className="font-semibold text-xs flex items-center gap-1.5">
-                            <span>Gemini 3.6 Flash</span>
-                            <span className="text-[10px] bg-[#9B72CF]/20 text-purple-300 px-1.5 py-0.5 rounded-full font-mono">Standard</span>
+                            <span>Gemini 3.8 Flash</span>
+                            <span className="text-[10px] bg-[#4E80EE]/20 text-[#70CFFF] px-1.5 py-0.5 rounded-full font-mono">⚡ Ultra Fast & Smart</span>
                           </div>
-                          <div className="text-[11px] text-[#8e918f] mt-0.5">Balanced intelligence and high speed</div>
+                          <div className="text-[11px] text-[#8e918f] mt-0.5">Top-speed 1.0s response & exceptional intelligence</div>
                         </button>
                         <button
                           onClick={() => {
@@ -1374,9 +1370,24 @@ function App() {
                         >
                           <div className="font-semibold text-xs flex items-center gap-1.5">
                             <span>Gemini 3.7 Flash</span>
-                            <span className="text-[10px] bg-[#E275AA]/20 text-pink-300 px-1.5 py-0.5 rounded-full font-mono">Advanced</span>
+                            <span className="text-[10px] bg-[#E275AA]/20 text-pink-300 px-1.5 py-0.5 rounded-full font-mono">🧠 Advanced</span>
                           </div>
                           <div className="text-[11px] text-[#8e918f] mt-0.5">Deep reasoning and complex queries</div>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedModel('fast');
+                            setIsModelSelectorOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
+                            selectedModel === 'fast' ? 'bg-[#9B72CF]/20 text-purple-300 border border-[#9B72CF]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
+                          }`}
+                        >
+                          <div className="font-semibold text-xs flex items-center gap-1.5">
+                            <span>Gemini 3.5 Flash Lite</span>
+                            <span className="text-[10px] bg-[#9B72CF]/20 text-purple-300 px-1.5 py-0.5 rounded-full font-mono">⚡ Instant Voice</span>
+                          </div>
+                          <div className="text-[11px] text-[#8e918f] mt-0.5">Sub-second immediate answers & instant voice</div>
                         </button>
                       </div>
                     )}

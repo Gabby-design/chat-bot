@@ -16,7 +16,7 @@ import database
 load_dotenv(override=True)
 
 # Configure Gemini Model
-gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 print(f"Default Gemini model configured: {gemini_model}")
 
 # Initialize Database
@@ -124,20 +124,24 @@ async def chat_stream(request: ChatRequest):
             # For Voice Mode: prioritize lowest latency (~0.6s) sub-second streaming
             # For Chat Mode: prioritize deep reasoning, code generation, and top-tier intelligence
             model_selection = request.model or ""
-            configured_model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+            configured_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+            
+            # Smart Model Routing:
+            # Voice Mode: lowest latency (~1.0s) sub-second streaming
+            # Chat Mode: deep intelligence, high availability, fast generation
             if request.mode == "voice":
-                primary_model = configured_model
-                fallback_models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
+                primary_model = "gemini-3.8-flash"
+                fallback_models = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash"]
             else:
                 if model_selection == "advanced":
                     primary_model = "gemini-3.7-flash"
-                    fallback_models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
-                elif model_selection == "fast":
-                    primary_model = configured_model
-                    fallback_models = ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.5-flash"]
+                    fallback_models = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.6-flash"]
+                elif model_selection in ("fast", "lite"):
+                    primary_model = "gemini-3.8-flash"
+                    fallback_models = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.7-flash"]
                 else:
                     primary_model = configured_model
-                    fallback_models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash", "gemini-3.5-flash-lite"]
+                    fallback_models = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"]
             
             models_to_try = [primary_model]
             for model in fallback_models:
@@ -206,29 +210,48 @@ async def chat_stream(request: ChatRequest):
                     
                 except Exception as e:
                     error_msg = str(e)
+                    error_lower = error_msg.lower()
                     print(f"Error with model {model_name}: {error_msg}")
                     
-                    # Check for leaked API key or auth errors
-                    if "403" in error_msg or "leaked" in error_msg.lower():
+                    # Check for leaked API key or auth errors (non-retryable)
+                    if "403" in error_msg or "leaked" in error_lower:
                         yield f"data: {json.dumps({'error': 'API Key Error (403): Your Gemini API key was flagged as leaked or invalid. Please update server/.env with a valid API key from https://aistudio.google.com/app/apikey'})}\n\n"
                         return
 
-                    # Check for rate limit error (429)
-                    is_rate_limit = "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower()
-                    
-                    if is_rate_limit:
-                        print(f"Rate limit hit for {model_name}.")
-                        if i == len(models_to_try) - 1:
-                            yield f"data: {json.dumps({'error': f'Rate limit exceeded on all models. Please try again in a few moments. Error: {error_msg}'})}\n\n"
-                        else:
-                            yield f"data: {json.dumps({'info': f'Rate limit on {model_name}. Switching to fallback...'})}\n\n"
+                    # Detect retryable/fallback conditions:
+                    # 1. 503: High demand / Service Unavailable / temporary spike
+                    # 2. 429: Rate limit / quota exceeded
+                    # 3. 500 / 502 / 504: Google server / gateway issue
+                    # 4. 404: Deprecated model or not found
+                    is_503_overloaded = "503" in error_msg or "unavailable" in error_lower or "high demand" in error_lower or "overloaded" in error_lower
+                    is_rate_limit = "429" in error_msg or "quota" in error_lower or "rate" in error_lower
+                    is_server_error = any(code in error_msg for code in ["500", "502", "504"]) or "internal" in error_lower or "gateway" in error_lower
+                    is_model_unavailable = "404" in error_msg or "not found" in error_lower or "no longer available" in error_lower
+
+                    is_retryable = is_503_overloaded or is_rate_limit or is_server_error or is_model_unavailable
+
+                    if is_retryable:
+                        if i < len(models_to_try) - 1:
+                            next_model = models_to_try[i + 1]
+                            reason = (
+                                "experiencing temporary high demand (503)" if is_503_overloaded else
+                                "rate limited (429)" if is_rate_limit else
+                                "temporarily unavailable"
+                            )
+                            print(f"Model {model_name} is {reason}. Seamlessly switching to fallback model: {next_model}...")
+                            full_response = ""  # Reset any partial buffer for clean generation from fallback model
+                            await asyncio.sleep(0.2)
                             continue
-                    elif "404" in error_msg or "not found" in error_msg.lower():
-                        print(f"Model {model_name} not available, trying next fallback...")
-                        if i == len(models_to_try) - 1:
-                            yield f"data: {json.dumps({'error': f'Model {model_name} not found or unavailable. Error: {error_msg}'})}\n\n"
                         else:
-                            continue
+                            # All fallback models exhausted
+                            if is_503_overloaded:
+                                friendly_msg = "Google Gemini is currently experiencing exceptionally high demand across all models (503 Service Unavailable). Please wait a few seconds and try again."
+                            elif is_rate_limit:
+                                friendly_msg = "Rate limit reached across all available models. Please wait a few moments and try again."
+                            else:
+                                friendly_msg = f"Temporary service error: {error_msg}"
+                            yield f"data: {json.dumps({'error': friendly_msg})}\n\n"
+                            return
                     else:
                         yield f"data: {json.dumps({'error': error_msg})}\n\n"
                         return

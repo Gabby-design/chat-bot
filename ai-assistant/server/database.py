@@ -55,8 +55,8 @@ def add_message(chat_id: str, role: str, content: str):
     # Update chat title if it's the first user message and title is "New Chat"
     if role == "user":
         cursor.execute('SELECT title FROM chats WHERE id = ?', (chat_id,))
-        current_title = cursor.fetchone()[0]
-        if current_title == "New Chat":
+        row = cursor.fetchone()
+        if row and row[0] == "New Chat":
             # Simple truncation for title, could be improved with AI summarization later
             new_title = content[:30] + "..." if len(content) > 30 else content
             cursor.execute('UPDATE chats SET title = ? WHERE id = ?', (new_title, chat_id))

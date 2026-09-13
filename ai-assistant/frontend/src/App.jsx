@@ -1,9 +1,10 @@
 // src/App.jsx
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast, { Toaster } from 'react-hot-toast';
+import VoiceModeModal from './components/VoiceModeModal.jsx';
 
 function App() {
   // State
@@ -15,6 +16,16 @@ function App() {
   const [isToolsOpen, setIsToolsOpen] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState(null);
   const [copiedCodeBlock, setCopiedCodeBlock] = useState(null);
+
+  // Live Voice Mode State
+  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
+
+  // Ratings & Speech & Editing state
+  const [ratings, setRatings] = useState({});
+  const [speakingIndex, setSpeakingIndex] = useState(null);
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [editingText, setEditingText] = useState('');
+  const abortControllerRef = useRef(null);
 
   // Responsive state
   const [isMobile, setIsMobile] = useState(false);
@@ -187,21 +198,27 @@ function App() {
 
 
   const stopGeneration = () => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-      setIsStreaming(false);
-      setIsLoading(false);
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
+    setIsStreaming(false);
+    setIsLoading(false);
+    toast('Generation stopped', { icon: '⏹️', style: { background: '#1E1E1E', color: '#fff' } });
   };
 
   const copyToClipboard = async (text, index) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedIndex(index);
+      toast.success('Copied to clipboard', {
+        id: `copy-${index}`,
+        style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+      });
       setTimeout(() => setCopiedIndex(null), 2000);
     } catch (err) {
       console.error('Copy failed', err);
+      toast.error('Failed to copy');
     }
   };
 
@@ -209,10 +226,121 @@ function App() {
     try {
       await navigator.clipboard.writeText(code);
       setCopiedCodeBlock(blockId);
+      toast.success('Code copied!', {
+        id: `copy-code-${blockId}`,
+        style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+      });
       setTimeout(() => setCopiedCodeBlock(null), 2000);
     } catch (err) {
       console.error('Copy code failed', err);
     }
+  };
+
+  const handleRate = (index, type) => {
+    setRatings((prev) => {
+      const current = prev[index];
+      const next = current === type ? null : type;
+      if (next === 'like') {
+        toast.success('Thanks for the feedback!', {
+          icon: '👍',
+          id: `rate-${index}`,
+          style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+        });
+      } else if (next === 'dislike') {
+        toast('Feedback noted. We will work to improve.', {
+          icon: '👎',
+          id: `rate-${index}`,
+          style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+        });
+      }
+      return { ...prev, [index]: next };
+    });
+  };
+
+  const toggleSpeech = (index, text) => {
+    if (!('speechSynthesis' in window)) {
+      toast.error('Text-to-speech is not supported in this browser.');
+      return;
+    }
+
+    if (speakingIndex === index) {
+      window.speechSynthesis.cancel();
+      setSpeakingIndex(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    // Strip code blocks and markdown markers for clear voice output
+    const cleanText = text
+      .replace(/```[\s\S]*?```/g, 'Code block omitted.')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/[*_~#]/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onend = () => setSpeakingIndex(null);
+    utterance.onerror = () => setSpeakingIndex(null);
+
+    setSpeakingIndex(index);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  useEffect(() => {
+    const handleGlobalSpeechKey = (e) => {
+      if (e.key === 'Escape' && speakingIndex !== null) {
+        window.speechSynthesis.cancel();
+        setSpeakingIndex(null);
+        toast('Speech stopped', { icon: '⏹', id: 'global-tts-stop' });
+      }
+    };
+    window.addEventListener('keydown', handleGlobalSpeechKey);
+    return () => window.removeEventListener('keydown', handleGlobalSpeechKey);
+  }, [speakingIndex]);
+
+
+  const handleStartEdit = (index, content) => {
+    setEditingIndex(index);
+    setEditingText(content);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingIndex(null);
+    setEditingText('');
+  };
+
+  const handleSaveAndSubmitEdit = async (index) => {
+    if (!editingText.trim() || isLoading) return;
+    const updatedContent = editingText.trim();
+    setEditingIndex(null);
+    setEditingText('');
+
+    // Truncate messages up to the edited user message
+    const updatedHistory = [...messages.slice(0, index), { role: 'user', content: updatedContent }];
+    setMessages(updatedHistory);
+
+    let activeChatId = currentChatId;
+    if (!activeChatId) {
+      try {
+        const res = await fetch('http://localhost:8000/api/chats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: updatedContent.slice(0, 30) })
+        });
+        const newChat = await res.json();
+        activeChatId = newChat.id;
+        setCurrentChatId(activeChatId);
+        setChats((prev) => [newChat, ...prev]);
+      } catch (err) {
+        console.error('Failed to create chat', err);
+        return;
+      }
+    }
+
+    await streamResponse(updatedContent, activeChatId);
   };
 
   const regenerateMessage = async (assistantIndex) => {
@@ -224,11 +352,9 @@ function App() {
     const userMsgIndex = assistantIndex - 1 - userIdx;
     const userMsg = messages[userMsgIndex];
 
-    setMessages((prev) => {
-      const newMsgs = [...prev];
-      newMsgs[assistantIndex] = { role: 'assistant', content: '' };
-      return newMsgs;
-    });
+    // Truncate conversation to right after the prompt
+    const truncated = messages.slice(0, userMsgIndex + 1);
+    setMessages(truncated);
 
     await streamResponse(userMsg.content, currentChatId);
   };
@@ -237,13 +363,20 @@ function App() {
     setIsLoading(true);
     setIsStreaming(true);
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
 
     try {
       const response = await fetch('http://localhost:8000/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, chat_id: chatIdToUse })
+        body: JSON.stringify({ message, chat_id: chatIdToUse, model: selectedModel }),
+        signal: controller.signal
       });
 
       if (!response.ok) {
@@ -255,53 +388,71 @@ function App() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let streamed = '';
+      let sseBuffer = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop(); // Keep partial line across chunks
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('data: ')) {
+            const data = trimmedLine.slice(6).trim();
             if (data === '[DONE]') {
               setIsStreaming(false);
               setIsLoading(false);
-              // Refresh chat list to update titles/order
+              abortControllerRef.current = null;
               fetchChats();
-
               return;
             }
             try {
               const parsed = JSON.parse(data);
               if (parsed.text) {
-                streamed += parsed.text;
+                const newToken = parsed.text;
+                streamed += newToken;
                 setMessages((prev) => {
-                  const newMsgs = [...prev];
-                  newMsgs[newMsgs.length - 1].content = streamed;
-                  return newMsgs;
+                  const updated = [...prev];
+                  if (updated.length > 0) {
+                    const lastIdx = updated.length - 1;
+                    updated[lastIdx] = {
+                      ...updated[lastIdx],
+                      content: updated[lastIdx].content + newToken
+                    };
+                  }
+                  return updated;
                 });
               } else if (parsed.info) {
-                // Show info message (like "Retrying in X seconds...")
                 setMessages((prev) => {
-                  const newMsgs = [...prev];
-                  // Append info to content temporarily or just update it
-                  // We'll append it in italics to distinguish it
-                  newMsgs[newMsgs.length - 1].content = streamed + `\n\n*${parsed.info}*`;
-                  return newMsgs;
+                  const updated = [...prev];
+                  if (updated.length > 0) {
+                    const lastIdx = updated.length - 1;
+                    updated[lastIdx] = {
+                      ...updated[lastIdx],
+                      content: updated[lastIdx].content + `\n\n*${parsed.info}*`
+                    };
+                  }
+                  return updated;
                 });
               } else if (parsed.error) {
                 throw new Error(parsed.error);
               }
             } catch (e) {
-              console.error('Parse error', e);
+              if (e.message && !e.message.includes('JSON')) {
+                throw e;
+              }
             }
           }
         }
       }
     } catch (err) {
+      if (err.name === 'AbortError') {
+        console.log('Stream aborted by user');
+        return;
+      }
       console.error('Stream error', err);
       setMessages((prev) => {
         const newMsgs = [...prev];
@@ -311,6 +462,7 @@ function App() {
     } finally {
       setIsStreaming(false);
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -343,6 +495,126 @@ function App() {
 
     await streamResponse(userMsg.content, activeChatId);
   };
+
+  const handleVoiceMessage = async (spokenText, onChunk, interruptedContext = null) => {
+    if (!spokenText.trim()) return '';
+
+    const userMsg = { role: 'user', content: spokenText };
+    setMessages((prev) => [...prev, userMsg]);
+
+    let activeChatId = currentChatId;
+
+    setIsLoading(true);
+    setIsStreaming(true);
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+
+    try {
+      // Direct conversational voice instruction prompt with mode='voice' and optional interruption context
+      const response = await fetch('http://localhost:8000/api/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: spokenText,
+          chat_id: activeChatId || undefined,
+          mode: 'voice',
+          model: selectedModel
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        throw new Error('Server response error');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let streamed = '';
+      let sseBuffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop(); // Keep partial line across chunks
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('data: ')) {
+            const data = trimmedLine.slice(6).trim();
+            if (data === '[DONE]') {
+              setIsStreaming(false);
+              setIsLoading(false);
+              abortControllerRef.current = null;
+              if (onChunk) onChunk(null, streamed, true);
+              fetchChats();
+              return streamed;
+            }
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.chat_id && !currentChatId) {
+                setCurrentChatId(parsed.chat_id);
+              }
+              if (parsed.text) {
+                const newToken = parsed.text;
+                streamed += newToken;
+                if (onChunk) onChunk(newToken, streamed, false);
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  if (updated.length > 0) {
+                    const lastIdx = updated.length - 1;
+                    updated[lastIdx] = {
+                      ...updated[lastIdx],
+                      content: updated[lastIdx].content + newToken
+                    };
+                  }
+                  return updated;
+                });
+              }
+            } catch (e) {}
+          }
+        }
+      }
+      if (onChunk) onChunk(null, streamed, true);
+      return streamed;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        console.log('Voice stream aborted by user interruption');
+        return '';
+      }
+      console.error('Voice stream error:', err);
+      setMessages((prev) => {
+        const newMsgs = [...prev];
+        if (newMsgs.length > 0) {
+          newMsgs[newMsgs.length - 1].content = "Connection lost. Try speaking again.";
+        }
+        return newMsgs;
+      });
+      return "Connection lost. Try speaking again.";
+    } finally {
+      setIsStreaming(false);
+      setIsLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleAbortStream = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsStreaming(false);
+    setIsLoading(false);
+  };
+
 
   const handleSuggestionClick = (suggestion) => {
     setInput(suggestion);
@@ -436,37 +708,131 @@ function App() {
     setTools(prev => ({ ...prev, [toolName]: !prev[toolName] }));
   };
 
-  // Helper components - Glowing Arc (Large)
-  const ThinkingArc = () => (
-    <div className="flex items-center justify-center p-4">
-      <div className="glowing-arc"></div>
-    </div>
+  // Authentic 4-point Google Gemini Sparkle Star SVG
+  const GeminiSparkle = ({ className = "w-5 h-5", animated = false }) => (
+    <svg
+      viewBox="0 0 28 28"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`${className} ${animated ? 'gemini-sparkle-active' : ''}`}
+    >
+      <defs>
+        <linearGradient id="gemini-sparkle-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#4E80EE" />
+          <stop offset="35%" stopColor="#70CFFF" />
+          <stop offset="70%" stopColor="#9B72CF" />
+          <stop offset="100%" stopColor="#E275AA" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M14 0C14 7.732 7.732 14 0 14C7.732 14 14 20.268 14 28C14 20.268 20.268 14 28 14C20.268 14 14 7.732 14 0Z"
+        fill="url(#gemini-sparkle-grad)"
+      />
+    </svg>
   );
 
-  // Helper components - Gemini-style thinking dots (Restored)
-  const LoadingDots = () => (
-    <div className="gemini-thinking-container">
-      <div className="gemini-dot"></div>
-      <div className="gemini-dot"></div>
-      <div className="gemini-dot"></div>
+  // Gemini Signature Shimmer Response Animation
+  const GeminiThinkingAnimation = () => (
+    <div className="flex flex-col gap-2.5 py-1 text-left">
+      <div className="flex items-center gap-2 mb-0.5">
+        <span className="gemini-thinking-text">
+          <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#4E80EE] to-[#E275AA] animate-ping" />
+          Gabby is thinking...
+        </span>
+      </div>
+      <div className="gemini-shimmer-card">
+        <div className="gemini-shimmer-bar" />
+        <div className="gemini-shimmer-bar" />
+        <div className="gemini-shimmer-bar" />
+      </div>
     </div>
   );
 
   const renderMessageActions = (msg, index) => {
     if (msg.role !== 'assistant') return null;
+    const isLiked = ratings[index] === 'like';
+    const isDisliked = ratings[index] === 'dislike';
+    const isSpeaking = speakingIndex === index;
+
     return (
-      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex items-center gap-1.5 pt-2 opacity-95 transition-opacity">
+        {/* Copy Response Button */}
         <button
           onClick={() => copyToClipboard(msg.content, index)}
-          className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors text-xs flex items-center gap-1"
-          title="Copy message"
+          className="p-1.5 px-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors text-xs flex items-center gap-1 border border-transparent hover:border-white/10"
+          title="Copy response"
         >
-          <Copy size={14} />
-          {copiedIndex === index && <span className="text-xs">Copied!</span>}
+          {copiedIndex === index ? (
+            <>
+              <Check size={14} className="text-emerald-400" />
+              <span className="text-[11px] text-emerald-400 font-medium">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy size={14} />
+              <span className="text-[11px] hidden sm:inline">Copy</span>
+            </>
+          )}
         </button>
+
+        {/* Read Aloud / TTS Button */}
+        <button
+          onClick={() => toggleSpeech(index, msg.content)}
+          className={`p-1.5 px-2 rounded-lg text-xs flex items-center gap-1.5 transition-colors border ${
+            isSpeaking
+              ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
+              : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
+          }`}
+          title={isSpeaking ? 'Stop speaking' : 'Read aloud'}
+        >
+          {isSpeaking ? (
+            <>
+              <div className="flex items-center gap-0.5 h-3">
+                <span className="sound-wave-bar" />
+                <span className="sound-wave-bar" />
+                <span className="sound-wave-bar" />
+              </div>
+              <VolumeX size={14} />
+              <span className="text-[11px] hidden sm:inline">Stop</span>
+            </>
+          ) : (
+            <>
+              <Volume2 size={14} />
+              <span className="text-[11px] hidden sm:inline">Listen</span>
+            </>
+          )}
+        </button>
+
+        {/* Thumbs Up (Good Response) */}
+        <button
+          onClick={() => handleRate(index, 'like')}
+          className={`p-1.5 rounded-lg text-xs transition-colors border ${
+            isLiked
+              ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
+              : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
+          }`}
+          title="Good response"
+        >
+          <ThumbsUp size={14} className={isLiked ? 'fill-cyan-400' : ''} />
+        </button>
+
+        {/* Thumbs Down (Bad Response) */}
+        <button
+          onClick={() => handleRate(index, 'dislike')}
+          className={`p-1.5 rounded-lg text-xs transition-colors border ${
+            isDisliked
+              ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
+              : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
+          }`}
+          title="Bad response"
+        >
+          <ThumbsDown size={14} className={isDisliked ? 'fill-rose-400' : ''} />
+        </button>
+
+        {/* Regenerate Button */}
         <button
           onClick={() => regenerateMessage(index)}
-          className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors"
+          className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors border border-transparent hover:border-white/10"
           title="Regenerate response"
         >
           <RotateCcw size={14} />
@@ -478,17 +844,16 @@ function App() {
   const SuggestionCard = ({ icon: Icon, title, description }) => (
     <button
       onClick={() => handleSuggestionClick(description)}
-      className="glass-card p-6 rounded-2xl text-left group cursor-pointer animate-fade-in"
+      className="p-4 rounded-2xl bg-[#1e1f20] hover:bg-[#282a2c] text-left transition-all border border-white/5 hover:border-white/10 group cursor-pointer flex flex-col justify-between h-[150px] shadow-sm relative overflow-hidden"
     >
-      <div className="flex items-start gap-4">
-        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-          <Icon size={24} className="text-green-400" />
+      <div>
+        <h3 className="text-sm font-medium text-[#e3e3e3] mb-1 group-hover:text-white transition-colors">{title}</h3>
+        <p className="text-xs text-[#c4c7c5] line-clamp-2 leading-relaxed">{description}</p>
+      </div>
+      <div className="flex justify-end mt-auto">
+        <div className="w-8 h-8 rounded-full bg-[#131314] flex items-center justify-center text-[#e3e3e3] group-hover:scale-110 group-hover:text-white transition-all border border-white/5">
+          <Icon size={15} />
         </div>
-        <div className="flex-1">
-          <h3 className="font-semibold text-white mb-1">{title}</h3>
-          <p className="text-sm text-gray-400">{description}</p>
-        </div>
-        <ChevronRight size={20} className="text-gray-500 group-hover:text-green-400 transition-colors" />
       </div>
     </button>
   );
@@ -517,23 +882,23 @@ function App() {
     <div className="flex h-screen bg-[var(--color-background-dark)] text-[var(--color-text-light)] overflow-hidden font-sans">
       <Toaster />
       {/* Left Sidebar */}
-      <aside className={`${isSidebarOpen ? 'w-[260px]' : 'w-[56px]'} bg-[#1E1E1E] transition-all duration-300 ease-in-out flex flex-col border-r border-white/10 relative shrink-0`}>
+      <aside className={`${isSidebarOpen ? 'w-[260px]' : 'w-[56px]'} bg-[#1e1f20] transition-all duration-300 ease-in-out flex flex-col border-r border-[#282a2c] relative shrink-0`}>
         {isSidebarOpen ? (
           <>
             {/* Sidebar Header - Full */}
-            <div className="flex items-center justify-between p-3 border-b border-white/10">
+            <div className="flex items-center justify-between p-3 border-b border-white/5">
               <button
                 onClick={() => setIsSidebarOpen(false)}
-                className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"
+                className="p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors"
               >
                 <Menu size={20} />
               </button>
               <button
                 onClick={() => setIsSearchOpen(true)}
-                className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"
+                className="p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors"
                 title="Search chats"
               >
-                <Search size={20} />
+                <Search size={18} />
               </button>
             </div>
 
@@ -541,9 +906,9 @@ function App() {
             <div className="p-3">
               <button
                 onClick={createNewChat}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-sm font-medium text-left text-gray-300 hover:text-white"
+                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-full bg-[#131314] hover:bg-[#282a2c] transition-all text-sm font-medium text-left text-[#e3e3e3] hover:text-white border border-white/5 shadow-sm"
               >
-                <Plus size={18} />
+                <Plus size={18} className="text-[#4E80EE]" />
                 <span>New chat</span>
               </button>
             </div>
@@ -554,10 +919,10 @@ function App() {
               <div>
                 <button
                   onClick={() => setIsMyStuffOpen(true)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-[#c4c7c5] hover:text-white hover:bg-[#282a2c]/60 rounded-xl transition-colors"
                 >
-                  <span className="font-medium">My Stuff</span>
-                  <ChevronRight size={16} />
+                  <span className="font-medium text-xs">My Stuff</span>
+                  <ChevronRight size={15} />
                 </button>
               </div>
 
@@ -565,30 +930,35 @@ function App() {
               <div>
                 <button
                   onClick={() => setIsGemsOpen(true)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-[#c4c7c5] hover:text-white hover:bg-[#282a2c]/60 rounded-xl transition-colors"
                 >
-                  <span className="font-medium">Gems</span>
-                  <ChevronRight size={16} />
+                  <span className="font-medium text-xs">Gems</span>
+                  <ChevronRight size={15} />
                 </button>
               </div>
 
               {/* Chats Section */}
               <div>
-                <div className="px-3 py-2 text-sm font-medium text-gray-400">Chats</div>
+                <div className="px-3 py-1.5 text-xs font-medium text-[#8e918f]">Recent</div>
                 <div className="space-y-1">
                   {chats.map((chat) => (
                     <div key={chat.id} className="group relative">
                       <button
                         onClick={() => loadChat(chat.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm text-left truncate ${currentChatId === chat.id ? 'bg-white/10 text-white' : 'text-gray-300 hover:bg-white/5'}`}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-full transition-all text-sm text-left truncate ${
+                          currentChatId === chat.id
+                            ? 'bg-[#282a2c] text-white font-medium'
+                            : 'text-[#c4c7c5] hover:bg-[#282a2c]/60 hover:text-white'
+                        }`}
                       >
-                        <span className="truncate flex-1">{chat.title || 'New Chat'}</span>
+                        <MessageSquare size={14} className="text-[#8e918f] shrink-0" />
+                        <span className="truncate flex-1 text-[13.5px]">{chat.title || 'New Chat'}</span>
                       </button>
                       <button
                         onClick={(e) => deleteChat(e, chat.id)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-[#8e918f] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity rounded-full hover:bg-white/5"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   ))}
@@ -596,15 +966,14 @@ function App() {
               </div>
             </div>
 
-
             {/* Settings Footer - Full */}
-            <div className="p-3 border-t border-white/10">
+            <div className="p-3 border-t border-white/5">
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-sm text-left text-gray-300 hover:text-white"
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-full hover:bg-[#282a2c] transition-colors text-sm text-left text-[#c4c7c5] hover:text-white"
               >
                 <Settings size={18} />
-                <span>Settings & help</span>
+                <span className="text-xs">Settings & help</span>
               </button>
             </div>
           </>
@@ -614,14 +983,14 @@ function App() {
             <div className="flex flex-col items-center py-3 space-y-2">
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className="p-3 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"
+                className="p-3 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors"
                 title="Expand sidebar"
               >
                 <Menu size={20} />
               </button>
               <button
                 onClick={createNewChat}
-                className="p-3 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"
+                className="p-3 hover:bg-[#282a2c] rounded-full text-[#4E80EE] hover:text-white transition-colors"
                 title="New chat"
               >
                 <Plus size={20} />
@@ -629,10 +998,10 @@ function App() {
             </div>
 
             {/* Settings Icon at Bottom */}
-            <div className="mt-auto flex flex-col items-center py-3 border-t border-white/10">
+            <div className="mt-auto flex flex-col items-center py-3 border-t border-white/5">
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="p-3 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"
+                className="p-3 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors"
                 title="Settings & help"
               >
                 <Settings size={20} />
@@ -643,14 +1012,41 @@ function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full relative min-w-0">
+      <main className="flex-1 flex flex-col h-full relative min-w-0 bg-[#131314]">
         {/* Header */}
-        <header className="h-14 flex items-center px-4 justify-between bg-[var(--color-background-dark)] border-b border-white/5 z-10">
+        <header className="h-14 flex items-center px-4 justify-between bg-[#131314] border-b border-white/5 z-10">
           <div className="flex items-center gap-3">
-            <span className="text-lg font-normal text-white">Gabby</span>
+            {!isSidebarOpen && (
+              <button
+                onClick={() => setIsSidebarOpen(true)}
+                className="p-2 hover:bg-[#1e1f20] rounded-full text-[#c4c7c5] hover:text-white transition-colors"
+                title="Open sidebar"
+              >
+                <Menu size={20} />
+              </button>
+            )}
+            <div className="flex items-center gap-2.5">
+              <GeminiSparkle className="w-6 h-6" />
+              <span className="text-xl font-medium tracking-tight text-[#e3e3e3]">
+                Gabby
+              </span>
+              <span className="text-xs text-[#8e918f] bg-[#1e1f20] px-2.5 py-0.5 rounded-full border border-white/5 ml-1 font-mono">
+                3.6 Flash
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-sm font-medium text-white">
+          <div className="flex items-center gap-3">
+            {/* Live Voice Mode Button */}
+            <button
+              type="button"
+              onClick={() => setIsVoiceModeOpen(true)}
+              className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-[#4E80EE]/15 via-[#9B72CF]/15 to-[#E275AA]/15 hover:from-[#4E80EE]/25 hover:via-[#9B72CF]/25 hover:to-[#E275AA]/25 border border-[#4E80EE]/30 hover:border-[#9B72CF]/50 text-[#e3e3e3] text-xs font-medium flex items-center gap-1.5 transition-all shadow-sm group cursor-pointer"
+              title="Start Live Voice Conversation"
+            >
+              <Mic size={14} className="text-[#70CFFF] group-hover:scale-110 transition-transform" />
+              <span>Voice Mode</span>
+            </button>
+            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#4E80EE] via-[#9B72CF] to-[#E275AA] flex items-center justify-center text-sm font-semibold text-white shadow-md">
               G
             </div>
           </div>
@@ -659,113 +1055,200 @@ function App() {
         {/* Chat Area */}
         <div className="flex-1 overflow-y-auto scroll-smooth relative">
           {messages.length === 0 ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4">
-              <div className="max-w-3xl w-full space-y-8 animate-fade-in">
-                {/* Gabby Icon and Greeting */}
-                <div className="flex flex-col items-center mb-8">
-                  <div className="mb-6 flex items-center gap-3">
-                    <Sparkles size={32} className="text-blue-400" />
-                    <h1 className="text-4xl font-normal text-white">Hi Gabriel</h1>
-                  </div>
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-4 sm:p-6 overflow-y-auto custom-scrollbar">
+              <div className="max-w-4xl w-full flex flex-col items-start space-y-8 animate-fade-in my-auto">
+                {/* Gemini Signature Heading */}
+                <div className="space-y-1 text-left px-2">
+                  <h1 className="text-4xl sm:text-5xl md:text-6xl font-medium tracking-tight bg-gradient-to-r from-[#4E80EE] via-[#9B72CF] to-[#E275AA] bg-clip-text text-transparent">
+                    Hello, Gabriel
+                  </h1>
+                  <h2 className="text-3xl sm:text-4xl md:text-5xl font-medium text-[#757775]">
+                    How can I help you today?
+                  </h2>
                 </div>
 
-                {/* Suggestion Pills */}
-                <div className="flex flex-wrap items-center justify-center gap-3 px-4">
-                  <button
-                    onClick={() => handleSuggestionClick('Create an image')}
-                    className="px-4 py-2.5 rounded-full bg-[#2A2A2A] hover:bg-[#333333] text-white text-sm transition-colors border border-white/10 flex items-center gap-2"
-                  >
-                    <span>🔥</span>
-                    <span>Create image</span>
-                  </button>
-                  <button
-                    onClick={() => handleSuggestionClick('Create a video')}
-                    className="px-4 py-2.5 rounded-full bg-[#2A2A2A] hover:bg-[#333333] text-white text-sm transition-colors border border-white/10"
-                  >
-                    Create video
-                  </button>
-                  <button
-                    onClick={() => handleSuggestionClick('Write anything')}
-                    className="px-4 py-2.5 rounded-full bg-[#2A2A2A] hover:bg-[#333333] text-white text-sm transition-colors border border-white/10"
-                  >
-                    Write anything
-                  </button>
-                  <button
-                    onClick={() => handleSuggestionClick('Help me learn')}
-                    className="px-4 py-2.5 rounded-full bg-[#2A2A2A] hover:bg-[#333333] text-white text-sm transition-colors border border-white/10"
-                  >
-                    Help me learn
-                  </button>
-                  <button
-                    onClick={() => handleSuggestionClick('Boost my day')}
-                    className="px-4 py-2.5 rounded-full bg-[#2A2A2A] hover:bg-[#333333] text-white text-sm transition-colors border border-white/10"
-                  >
-                    Boost my day
-                  </button>
+                {/* Gemini 4 Suggestion Cards in a Row / Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 w-full">
+                  <SuggestionCard
+                    icon={FileText}
+                    title="Help me write"
+                    description="a professional thank-you email after a job interview"
+                  />
+                  <SuggestionCard
+                    icon={Sparkles}
+                    title="Brainstorm ideas"
+                    description="for a modern high-performance AI web application"
+                  />
+                  <SuggestionCard
+                    icon={HelpCircle}
+                    title="Explain a concept"
+                    description="how neural networks understand natural language"
+                  />
+                  <SuggestionCard
+                    icon={Code}
+                    title="Code & debug"
+                    description="write a python script to parse and organize files"
+                  />
                 </div>
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto w-full pb-32 pt-4 px-4">
+            <div className="max-w-3xl mx-auto w-full pb-36 pt-6 px-4 md:px-0">
               {messages.map((msg, index) => (
-                <div key={index} className={`group flex gap-6 mb-8 ${msg.role === 'assistant' ? 'items-start' : 'items-start flex-row-reverse'}`}>
-                  <div className="relative shrink-0">
-                    {/* Pulsing ring when AI is thinking - Gemini Style */}
-                    {msg.role === 'assistant' && !msg.content && isLoading && (
-                      <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-blue-400 via-cyan-400 to-purple-500 blur-sm opacity-50 animate-pulse" />
+                <div
+                  key={index}
+                  className={`group flex gap-3.5 md:gap-4 mb-6 md:mb-8 transition-all ${
+                    msg.role === 'assistant' ? 'items-start' : 'items-start flex-row-reverse'
+                  }`}
+                >
+                  {/* Avatar */}
+                  <div className="relative shrink-0 mt-0.5">
+                    {msg.role === 'assistant' ? (
+                      <div className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center">
+                        <GeminiSparkle
+                          className="w-6 h-6 md:w-7 md:h-7"
+                          animated={isLoading && !msg.content && index === messages.length - 1}
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-[#282a2c] border border-white/5 flex items-center justify-center text-[#e3e3e3] shadow-sm">
+                        <User size={16} />
+                      </div>
                     )}
-                    {/* Avatar with glowing effect for AI */}
-                    <div className={`relative w-8 h-8 rounded-full flex items-center justify-center ${msg.role === 'assistant' ? (isLoading && !msg.content ? 'bg-transparent shadow-none' : 'bg-cyan-500 shadow-lg shadow-cyan-500/50') : 'bg-gray-600'}`}>
-                      {msg.role === 'assistant' && isLoading && !msg.content ? (
-                        <div className="avatar-loader"></div>
-                      ) : (
-                        <User size={18} className="text-white" />
-                      )}
-                    </div>
                   </div>
-                  <div className={`flex-1 max-w-[85%] space-y-2 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                    <div className={`inline-block text-[15px] leading-relaxed ${msg.role === 'assistant' ? 'text-gray-100' : 'bg-[var(--color-surface-dark)] text-white rounded-2xl px-5 py-3'}`}>
-                      {msg.role === 'assistant' ? (
-                        msg.content ? (
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
-                            pre: ({ children }) => <>{children}</>,
-                            p: ({ children }) => <div className="mb-2 last:mb-0">{children}</div>,
-                            code({ node, inline, className, children, ...props }) {
-                              const match = /language-(\w+)/.exec(className || '');
-                              return !inline ? (
-                                <div className="relative my-4 rounded-lg overflow-hidden bg-black/40 border border-white/10 group/code text-left">
-                                  <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/10">
-                                    <span className="text-xs text-gray-400 font-mono">{match ? match[1] : 'code'}</span>
-                                    <button
-                                      onClick={() => {
-                                        const codeText = String(children).replace(/\n$/, '');
-                                        const blockId = `${index}-${match ? match[1] : 'code'}`;
-                                        copyCodeToClipboard(codeText, blockId);
-                                      }}
-                                      className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
-                                      title="Copy code"
-                                    >
-                                      <Copy size={12} />
-                                      {copiedCodeBlock === `${index}-${match ? match[1] : 'code'}` ? <span>Copied!</span> : <span>Copy</span>}
-                                    </button>
-                                  </div>
-                                  <pre className="p-4 overflow-x-auto"><code className={className} {...props}>{children}</code></pre>
-                                </div>
-                              ) : (
-                                <code className="bg-white/10 px-1.5 py-0.5 rounded text-sm font-mono text-teal-300" {...props}>{children}</code>
-                              );
-                            }
-                          }}>
-                            {msg.content}
-                          </ReactMarkdown>
-                        ) : (
-                          <LoadingDots />
-                        )
+
+                  {/* Message Content Container */}
+                  <div className={`flex-1 max-w-[88%] md:max-w-[82%] space-y-1.5 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                    {msg.role === 'user' ? (
+                      /* User Message Bubble */
+                      editingIndex === index ? (
+                        /* Inline Edit Form */
+                        <div className="bg-[#1e1f20] border border-[#4E80EE]/50 rounded-2xl p-3.5 shadow-xl text-left">
+                          <textarea
+                            className="w-full bg-transparent text-[#e3e3e3] text-sm focus:outline-none resize-none min-h-[70px] placeholder-[#8e918f] font-sans"
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSaveAndSubmitEdit(index);
+                              }
+                            }}
+                            autoFocus
+                          />
+                          <div className="flex justify-end items-center gap-2 mt-2 pt-2 border-t border-white/10">
+                            <span className="text-[11px] text-[#8e918f] mr-auto">Press Enter to save, Shift+Enter for newline</span>
+                            <button
+                              type="button"
+                              onClick={handleCancelEdit}
+                              className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#c4c7c5] hover:text-white hover:bg-white/10 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveAndSubmitEdit(index)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#4E80EE] to-[#9B72CF] hover:opacity-95 text-white font-semibold transition-all shadow flex items-center gap-1"
+                            >
+                              <Check size={13} />
+                              Save & Submit
+                            </button>
+                          </div>
+                        </div>
                       ) : (
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                      )}
-                    </div>
-                    {renderMessageActions(msg, index)}
+                        /* Display User Bubble */
+                        <div className="inline-flex flex-col items-end group/user">
+                          <div className="inline-block text-[15px] leading-relaxed bg-[#282a2c] text-[#e3e3e3] rounded-3xl rounded-tr-sm px-5 py-3 border border-white/5 shadow-sm">
+                            <p className="whitespace-pre-wrap text-left">{msg.content}</p>
+                          </div>
+                          {/* User action buttons on hover */}
+                          <div className="opacity-0 group-hover/user:opacity-100 transition-opacity mt-1 flex items-center gap-1">
+                            <button
+                              onClick={() => handleStartEdit(index, msg.content)}
+                              className="flex items-center gap-1 text-xs text-[#8e918f] hover:text-[#70CFFF] px-2 py-1 rounded-md hover:bg-white/5 transition-colors"
+                              title="Edit message"
+                            >
+                              <Pencil size={12} />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              onClick={() => copyToClipboard(msg.content, index)}
+                              className="text-xs text-[#8e918f] hover:text-white px-2 py-1 rounded-md hover:bg-white/5 transition-colors"
+                              title="Copy text"
+                            >
+                              <Copy size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    ) : (
+                      /* Assistant Message */
+                      <div className="text-left space-y-2">
+                        <div className="prose-chat text-[#e3e3e3] leading-relaxed">
+                          {msg.content ? (
+                            <>
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  pre: ({ children }) => <>{children}</>,
+                                  code({ node, inline, className, children, ...props }) {
+                                    const match = /language-(\w+)/.exec(className || '');
+                                    const codeText = String(children).replace(/\n$/, '');
+                                    const blockId = `${index}-${match ? match[1] : 'code'}`;
+                                    return !inline ? (
+                                      <div className="relative my-4 rounded-2xl overflow-hidden bg-[#1e1f20] border border-white/10 group/code shadow-lg text-left">
+                                        <div className="flex items-center justify-between px-4 py-2 bg-[#131314]/70 border-b border-white/5">
+                                          <span className="text-xs font-mono text-[#70CFFF] font-medium tracking-wide">
+                                            {match ? match[1] : 'code'}
+                                          </span>
+                                          <button
+                                            onClick={() => copyCodeToClipboard(codeText, blockId)}
+                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-[#c4c7c5] hover:text-white hover:bg-white/10 transition-colors"
+                                            title="Copy code"
+                                          >
+                                            {copiedCodeBlock === blockId ? (
+                                              <>
+                                                <Check size={13} className="text-emerald-400" />
+                                                <span className="text-emerald-400 font-medium">Copied!</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Copy size={13} />
+                                                <span>Copy code</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+                                        <pre className="p-4 overflow-x-auto text-[13.5px] leading-relaxed font-mono">
+                                          <code className={className} {...props}>
+                                            {children}
+                                          </code>
+                                        </pre>
+                                      </div>
+                                    ) : (
+                                      <code className="bg-[#282a2c] px-1.5 py-0.5 rounded-md text-sm font-mono text-[#70CFFF]" {...props}>
+                                        {children}
+                                      </code>
+                                    );
+                                  }
+                                }}
+                              >
+                                {msg.content}
+                              </ReactMarkdown>
+                              {isStreaming && index === messages.length - 1 && (
+                                <span className="streaming-cursor" title="Streaming..." />
+                              )}
+                            </>
+                          ) : (
+                            /* Gemini Signature Response Shimmer Animation */
+                            <GeminiThinkingAnimation />
+                          )}
+                        </div>
+
+                        {/* Action buttons (Copy, Listen/TTS, Thumbs Up/Down, Regenerate) */}
+                        {msg.content && renderMessageActions(msg, index)}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -774,46 +1257,48 @@ function App() {
           )}
         </div>
 
-
-
-
-
-        {/* Input Area */}
-        <div className={`absolute bottom-0 left-0 w-full bg-gradient-to-t from-[var(--color-background-dark)] via-[var(--color-background-dark)] to-transparent px-4 ${isMobile ? 'mobile-input-container pb-4' : 'pt-10 pb-6'}`}>
+        {/* Input Area (Gemini Floating Pill) */}
+        <div className={`absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#131314] via-[#131314]/95 to-transparent px-4 ${isMobile ? 'mobile-input-container pb-3' : 'pt-8 pb-5'}`}>
           <div className="max-w-3xl mx-auto w-full relative">
-            <form onSubmit={handleSubmit} className="relative bg-[#2A2A2A] rounded-3xl border border-white/10 focus-within:border-white/20 transition-colors shadow-lg">
-              <div className="flex items-center gap-2 px-4 py-3">
+            <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[28px] border border-[#282a2c] focus-within:border-white/20 transition-all shadow-2xl">
+              <div className="flex items-end gap-2 px-4 py-2.5">
                 {/* Plus button for attachments */}
                 <button
                   type="button"
                   onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
-                  className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"
+                  className="p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors mb-0.5"
                   title="Add attachment"
                 >
                   <Plus size={20} />
                 </button>
 
-                {/* Input field */}
-                <input
-                  type="text"
-                  placeholder="Ask Gabby"
-                  className="flex-1 bg-transparent text-white focus:outline-none placeholder-gray-400"
+                {/* Auto-expanding Input textarea */}
+                <textarea
+                  rows={1}
+                  placeholder="Ask Gabby..."
+                  className="flex-1 bg-transparent text-[#e3e3e3] focus:outline-none placeholder-[#8e918f] text-sm py-2 resize-none max-h-36 custom-scrollbar"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  disabled={isLoading}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit(e);
+                    }
+                  }}
+                  disabled={isLoading && !isStreaming}
                 />
 
                 {/* Right side buttons */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5 mb-0.5">
                   {/* Tools button */}
                   <button
                     type="button"
                     onClick={() => setIsToolsOpen(!isToolsOpen)}
-                    className="px-3 py-1.5 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors flex items-center gap-1.5 text-sm"
+                    className="px-2.5 py-1.5 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors flex items-center gap-1.5 text-xs font-medium"
                     title="Tools"
                   >
-                    <Zap size={16} />
-                    <span>Tools</span>
+                    <Zap size={14} className="text-[#4E80EE]" />
+                    <span className="hidden sm:inline">Tools</span>
                   </button>
 
                   {/* Model selector */}
@@ -821,79 +1306,110 @@ function App() {
                     <button
                       type="button"
                       onClick={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
-                      className="px-3 py-1.5 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors flex items-center gap-1.5 text-sm"
+                      className="px-2.5 py-1.5 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors flex items-center gap-1 text-xs font-medium bg-[#131314]/60 border border-white/5"
                       title="Select model"
                     >
-                      <span>{selectedModel === 'fast' ? 'Fast' : selectedModel === 'advanced' ? 'Advanced' : 'Experimental'}</span>
-                      <ChevronDown size={16} />
+                      <span className="text-[11px] font-medium">
+                        {selectedModel === 'fast'
+                          ? 'Gemini 3.5 Flash Lite'
+                          : selectedModel === 'advanced'
+                          ? 'Gemini 3.7 Flash'
+                          : 'Gemini 3.6 Flash'}
+                      </span>
+                      <ChevronDown size={13} />
                     </button>
 
                     {/* Model selector dropdown */}
                     {isModelSelectorOpen && (
-                      <div className="absolute bottom-full right-0 mb-2 w-56 bg-[#2A2A2A] border border-white/10 rounded-lg shadow-xl overflow-hidden z-50">
-                        <div className="p-2 space-y-1">
-                          <button
-                            onClick={() => {
-                              setSelectedModel('fast');
-                              setIsModelSelectorOpen(false);
-                            }}
-                            className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors ${selectedModel === 'fast' ? 'bg-white/10 text-white' : 'text-gray-300 hover:bg-white/5'}`}
-                          >
-                            <div className="font-medium text-sm">Fast</div>
-                            <div className="text-xs text-gray-400 mt-0.5">Gemini 1.5 Flash - Quick responses</div>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedModel('advanced');
-                              setIsModelSelectorOpen(false);
-                            }}
-                            className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors ${selectedModel === 'advanced' ? 'bg-white/10 text-white' : 'text-gray-300 hover:bg-white/5'}`}
-                          >
-                            <div className="font-medium text-sm">Advanced</div>
-                            <div className="text-xs text-gray-400 mt-0.5">Gemini 1.5 Pro - Better reasoning</div>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedModel('experimental');
-                              setIsModelSelectorOpen(false);
-                            }}
-                            className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors ${selectedModel === 'experimental' ? 'bg-white/10 text-white' : 'text-gray-300 hover:bg-white/5'}`}
-                          >
-                            <div className="font-medium text-sm">Experimental</div>
-                            <div className="text-xs text-gray-400 mt-0.5">Gemini 2.0 - Latest features</div>
-                          </button>
-                        </div>
+                      <div className="absolute bottom-full right-0 mb-2 w-64 bg-[#1e1f20] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 p-1.5 space-y-1">
+                        <button
+                          onClick={() => {
+                            setSelectedModel('fast');
+                            setIsModelSelectorOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
+                            selectedModel === 'fast' ? 'bg-[#4E80EE]/20 text-[#70CFFF] border border-[#4E80EE]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
+                          }`}
+                        >
+                          <div className="font-semibold text-xs flex items-center gap-1.5">
+                            <span>Gemini 3.5 Flash Lite</span>
+                            <span className="text-[10px] bg-[#4E80EE]/20 text-[#70CFFF] px-1.5 py-0.5 rounded-full font-mono">⚡ Ultra Fast</span>
+                          </div>
+                          <div className="text-[11px] text-[#8e918f] mt-0.5">Sub-second immediate answers & instant voice</div>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedModel('standard');
+                            setIsModelSelectorOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
+                            selectedModel === 'standard' ? 'bg-[#9B72CF]/20 text-purple-300 border border-[#9B72CF]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
+                          }`}
+                        >
+                          <div className="font-semibold text-xs flex items-center gap-1.5">
+                            <span>Gemini 3.6 Flash</span>
+                            <span className="text-[10px] bg-[#9B72CF]/20 text-purple-300 px-1.5 py-0.5 rounded-full font-mono">Standard</span>
+                          </div>
+                          <div className="text-[11px] text-[#8e918f] mt-0.5">Balanced intelligence and high speed</div>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedModel('advanced');
+                            setIsModelSelectorOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
+                            selectedModel === 'advanced' ? 'bg-[#E275AA]/20 text-pink-300 border border-[#E275AA]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
+                          }`}
+                        >
+                          <div className="font-semibold text-xs flex items-center gap-1.5">
+                            <span>Gemini 3.7 Flash</span>
+                            <span className="text-[10px] bg-[#E275AA]/20 text-pink-300 px-1.5 py-0.5 rounded-full font-mono">Advanced</span>
+                          </div>
+                          <div className="text-[11px] text-[#8e918f] mt-0.5">Deep reasoning and complex queries</div>
+                        </button>
                       </div>
                     )}
                   </div>
 
+                  {/* Live Voice Button (Opens untouched VoiceModeModal) */}
+                  <button
+                    type="button"
+                    onClick={() => setIsVoiceModeOpen(true)}
+                    className="p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center"
+                    title="Start Live Voice Conversation"
+                  >
+                    <Mic size={18} />
+                  </button>
 
-
-                  {/* Send/Stop button */}
+                  {/* Send or Stop button */}
                   {isStreaming ? (
                     <button
                       type="button"
                       onClick={stopGeneration}
-                      className="p-2 bg-white text-black rounded-lg hover:bg-gray-200 transition-colors"
+                      className="p-2 bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all shadow-md flex items-center justify-center"
                       title="Stop generation"
                     >
-                      <Square size={16} fill="currentColor" />
+                      <Square size={14} className="fill-current" />
                     </button>
                   ) : (
                     <button
                       type="submit"
-                      disabled={!input.trim()}
-                      className={`p-2 rounded-lg transition-colors ${input.trim() ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-transparent text-gray-500 cursor-not-allowed'}`}
+                      disabled={!input.trim() || isLoading}
+                      className={`p-2 rounded-full transition-all flex items-center justify-center ${
+                        input.trim() && !isLoading
+                          ? 'bg-white text-[#131314] hover:bg-gray-200 shadow-md scale-100 hover:scale-105 active:scale-95'
+                          : 'bg-white/5 text-[#8e918f] cursor-not-allowed'
+                      }`}
                       title="Send message"
                     >
-                      <Send size={18} />
+                      <Send size={16} />
                     </button>
                   )}
                 </div>
               </div>
             </form>
-            <div className="text-center mt-2">
-              <p className="text-xs text-gray-500">Gabby can make mistakes. Check important info.</p>
+            <div className="text-center mt-2 flex items-center justify-center gap-2">
+              <p className="text-[11px] text-[#8e918f]">Gabby may display inaccurate info, including about people, so double-check its responses.</p>
             </div>
           </div>
         </div>
@@ -1489,6 +2005,54 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Floating Speech Status Pill when reading aloud in chat */}
+      {speakingIndex !== null && (
+        <div className="fixed bottom-28 right-6 z-40 flex items-center gap-3 bg-[#1e2330]/95 backdrop-blur-md border border-rose-500/40 text-white px-4 py-2.5 rounded-full shadow-2xl animate-fade-in">
+          <div className="flex items-center gap-1">
+            <span className="live-eq-bar bg-rose-400 !h-4" />
+            <span className="live-eq-bar bg-rose-400 !h-4" />
+            <span className="live-eq-bar bg-rose-400 !h-4" />
+          </div>
+          <span className="text-xs text-gray-200 font-medium">Gabby is speaking...</span>
+          <button
+            onClick={() => {
+              window.speechSynthesis.cancel();
+              setSpeakingIndex(null);
+              toast('Speech stopped', { icon: '⏹', id: 'tts-stopped' });
+            }}
+            className="px-3 py-1 text-xs bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-full font-semibold transition-all border border-rose-500/30 flex items-center gap-1"
+          >
+            <Square size={10} className="fill-rose-300" />
+            <span>Stop (Esc)</span>
+          </button>
+        </div>
+      )}
+
+      {/* Live Voice Mode Overlay (ChatGPT Voice Style) */}
+      {isVoiceModeOpen && (
+        <VoiceModeModal
+          isOpen={isVoiceModeOpen}
+          onClose={() => {
+            setIsVoiceModeOpen(false);
+            if ('speechSynthesis' in window) {
+              window.speechSynthesis.cancel();
+            }
+          }}
+          onSendMessage={handleVoiceMessage}
+          onAbort={handleAbortStream}
+          onNewChat={createNewChat}
+          messages={messages}
+          onType={() => {
+            setIsVoiceModeOpen(false);
+            setTimeout(() => {
+              const inputEl = document.querySelector('textarea');
+              if (inputEl) inputEl.focus();
+            }, 100);
+          }}
+        />
+      )}
+
 
     </div>
   );

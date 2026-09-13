@@ -8,6 +8,59 @@ import VoiceModeModal from './components/VoiceModeModal.jsx';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+function CodeBlock({ className, children, ...props }) {
+  const [isCopied, setIsCopied] = useState(false);
+  const match = /language-(\w+)/.exec(className || '');
+  const codeText = String(children).replace(/\n$/, '');
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(codeText);
+      setIsCopied(true);
+      toast.success('Code copied!', {
+        id: 'code-copied-toast',
+        style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+      });
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Copy code failed', err);
+      toast.error('Failed to copy code');
+    }
+  };
+
+  return (
+    <div className="relative my-4 rounded-2xl overflow-hidden bg-[#1e1f20] border border-white/10 group/code shadow-lg text-left">
+      <div className="flex items-center justify-between px-4 py-2 bg-[#131314]/70 border-b border-white/5">
+        <span className="text-xs font-mono text-[#70CFFF] font-medium tracking-wide">
+          {match ? match[1] : 'code'}
+        </span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-[#c4c7c5] hover:text-white hover:bg-white/10 transition-colors"
+          title="Copy code"
+        >
+          {isCopied ? (
+            <>
+              <Check size={13} className="text-emerald-400" />
+              <span className="text-emerald-400 font-medium">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy size={13} />
+              <span>Copy code</span>
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="p-4 overflow-x-auto text-[13.5px] leading-relaxed font-mono">
+        <code className={className} {...props}>
+          {children}
+        </code>
+      </pre>
+    </div>
+  );
+}
+
 function App() {
   // State
   const [messages, setMessages] = useState([]);
@@ -17,7 +70,6 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isToolsOpen, setIsToolsOpen] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState(null);
-  const [copiedCodeBlock, setCopiedCodeBlock] = useState(null);
 
   // Live Voice Mode State
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
@@ -221,20 +273,6 @@ function App() {
     } catch (err) {
       console.error('Copy failed', err);
       toast.error('Failed to copy');
-    }
-  };
-
-  const copyCodeToClipboard = async (code, blockId) => {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopiedCodeBlock(blockId);
-      toast.success('Code copied!', {
-        id: `copy-code-${blockId}`,
-        style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
-      });
-      setTimeout(() => setCopiedCodeBlock(null), 2000);
-    } catch (err) {
-      console.error('Copy code failed', err);
     }
   };
 
@@ -1194,39 +1232,10 @@ function App() {
                                 components={{
                                   pre: ({ children }) => <>{children}</>,
                                   code({ node, inline, className, children, ...props }) {
-                                    const match = /language-(\w+)/.exec(className || '');
-                                    const codeText = String(children).replace(/\n$/, '');
-                                    const blockId = `${index}-${match ? match[1] : 'code'}`;
                                     return !inline ? (
-                                      <div className="relative my-4 rounded-2xl overflow-hidden bg-[#1e1f20] border border-white/10 group/code shadow-lg text-left">
-                                        <div className="flex items-center justify-between px-4 py-2 bg-[#131314]/70 border-b border-white/5">
-                                          <span className="text-xs font-mono text-[#70CFFF] font-medium tracking-wide">
-                                            {match ? match[1] : 'code'}
-                                          </span>
-                                          <button
-                                            onClick={() => copyCodeToClipboard(codeText, blockId)}
-                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-[#c4c7c5] hover:text-white hover:bg-white/10 transition-colors"
-                                            title="Copy code"
-                                          >
-                                            {copiedCodeBlock === blockId ? (
-                                              <>
-                                                <Check size={13} className="text-emerald-400" />
-                                                <span className="text-emerald-400 font-medium">Copied!</span>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <Copy size={13} />
-                                                <span>Copy code</span>
-                                              </>
-                                            )}
-                                          </button>
-                                        </div>
-                                        <pre className="p-4 overflow-x-auto text-[13.5px] leading-relaxed font-mono">
-                                          <code className={className} {...props}>
-                                            {children}
-                                          </code>
-                                        </pre>
-                                      </div>
+                                      <CodeBlock className={className} {...props}>
+                                        {children}
+                                      </CodeBlock>
                                     ) : (
                                       <code className="bg-[#282a2c] px-1.5 py-0.5 rounded-md text-sm font-mono text-[#70CFFF]" {...props}>
                                         {children}

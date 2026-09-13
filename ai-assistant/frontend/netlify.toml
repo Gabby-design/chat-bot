@@ -1,5 +1,4 @@
 [build]
-  base = "ai-assistant/frontend"
   publish = "dist"
   command = "npm run build"
 

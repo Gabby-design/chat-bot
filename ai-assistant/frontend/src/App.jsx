@@ -6,6 +6,8 @@ import remarkGfm from 'remark-gfm';
 import toast, { Toaster } from 'react-hot-toast';
 import VoiceModeModal from './components/VoiceModeModal.jsx';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+
 function App() {
   // State
   const [messages, setMessages] = useState([]);
@@ -97,7 +99,7 @@ function App() {
 
   const fetchChats = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/chats');
+      const response = await fetch(`${API_BASE_URL}/api/chats`);
       if (response.ok) {
         const data = await response.json();
         setChats(data);
@@ -123,7 +125,7 @@ function App() {
 
     try {
       setIsLoading(true);
-      const response = await fetch(`http://localhost:8000/api/chats/${chatId}`);
+      const response = await fetch(`${API_BASE_URL}/api/chats/${chatId}`);
       if (response.ok) {
         const data = await response.json();
         setMessages(data.messages);
@@ -148,7 +150,7 @@ function App() {
             onClick={async () => {
               toast.dismiss(t.id);
               try {
-                await fetch(`http://localhost:8000/api/chats/${chatId}`, { method: 'DELETE' });
+                await fetch(`${API_BASE_URL}/api/chats/${chatId}`, { method: 'DELETE' });
                 setChats(chats.filter(c => c.id !== chatId));
                 if (currentChatId === chatId) {
                   setCurrentChatId(null);
@@ -325,7 +327,7 @@ function App() {
     let activeChatId = currentChatId;
     if (!activeChatId) {
       try {
-        const res = await fetch('http://localhost:8000/api/chats', {
+        const res = await fetch(`${API_BASE_URL}/api/chats`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: updatedContent.slice(0, 30) })
@@ -372,7 +374,7 @@ function App() {
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
 
     try {
-      const response = await fetch('http://localhost:8000/api/chat/stream', {
+      const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, chat_id: chatIdToUse, model: selectedModel }),
@@ -478,7 +480,7 @@ function App() {
 
     if (!activeChatId) {
       try {
-        const res = await fetch('http://localhost:8000/api/chats', {
+        const res = await fetch(`${API_BASE_URL}/api/chats`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: input.slice(0, 30) })
@@ -517,7 +519,7 @@ function App() {
 
     try {
       // Direct conversational voice instruction prompt with mode='voice' and optional interruption context
-      const response = await fetch('http://localhost:8000/api/chat/stream', {
+      const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -634,7 +636,7 @@ function App() {
               try {
                 // Delete all chats
                 for (const chat of chats) {
-                  await fetch(`http://localhost:8000/api/chats/${chat.id}`, { method: 'DELETE' });
+                  await fetch(`${API_BASE_URL}/api/chats/${chat.id}`, { method: 'DELETE' });
                 }
                 setChats([]);
                 setCurrentChatId(null);

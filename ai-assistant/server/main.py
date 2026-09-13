@@ -5,12 +5,20 @@ from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
 import os
+import sys
 import json
 import asyncio
 import re
 from google import genai
 from google.genai import types
 import database
+
+# Fix for Windows asyncio Proactor connection reset errors on client disconnect
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
 
 # Load environment
 load_dotenv(override=True)
@@ -134,14 +142,14 @@ async def chat_stream(request: ChatRequest):
                 fallback_models = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash"]
             else:
                 if model_selection == "advanced":
-                    primary_model = "gemini-3.7-flash"
-                    fallback_models = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.6-flash"]
-                elif model_selection in ("fast", "lite"):
                     primary_model = "gemini-3.8-flash"
-                    fallback_models = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.7-flash"]
+                    fallback_models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash"]
+                elif model_selection in ("fast", "lite"):
+                    primary_model = "gemini-3.5-flash-lite"
+                    fallback_models = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
                 else:
                     primary_model = configured_model
-                    fallback_models = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"]
+                    fallback_models = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash"]
             
             models_to_try = [primary_model]
             for model in fallback_models:

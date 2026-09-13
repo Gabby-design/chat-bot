@@ -1,6 +1,6 @@
 // src/App.jsx
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff, Download } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast, { Toaster } from 'react-hot-toast';
@@ -118,6 +118,69 @@ function App() {
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState('standard');
+
+  // PWA Install State
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
+
+  // Detect standalone PWA mode & capture beforeinstallprompt
+  useEffect(() => {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    if (isStandalone) {
+      setIsAppInstalled(true);
+    }
+
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+
+    const handleAppInstalled = () => {
+      setIsAppInstalled(true);
+      setInstallPrompt(null);
+      toast.success('Gabby installed as an App!', {
+        icon: '✨',
+        style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+      });
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsAppInstalled(true);
+      }
+      setInstallPrompt(null);
+    } else {
+      toast(
+        (t) => (
+          <div className="text-xs space-y-1.5 py-0.5">
+            <p className="font-semibold text-white">Install Gabby App</p>
+            <p className="text-[#c4c7c5]">
+              • <strong>Desktop:</strong> Click the <span className="text-[#70CFFF]">Install icon (⊕)</span> in your browser's address bar.
+            </p>
+            <p className="text-[#c4c7c5]">
+              • <strong>iPhone / iPad:</strong> Tap <span className="text-[#70CFFF]">Share</span> then tap <span className="text-[#70CFFF]">Add to Home Screen</span>.
+            </p>
+          </div>
+        ),
+        {
+          duration: 6000,
+          style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }
+        }
+      );
+    }
+  };
 
   const messagesEndRef = useRef(null);
   const eventSourceRef = useRef(null);
@@ -1017,11 +1080,20 @@ function App() {
               </div>
             </div>
 
-            {/* Settings Footer - Full */}
-            <div className="p-3 border-t border-white/5">
+            {/* Settings & Install Footer - Full */}
+            <div className="p-3 border-t border-white/5 space-y-1">
+              {!isAppInstalled && (
+                <button
+                  onClick={handleInstallApp}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-full hover:bg-[#282a2c] transition-colors text-sm text-left text-[#70CFFF] hover:text-white group cursor-pointer"
+                >
+                  <Download size={18} className="text-[#70CFFF] group-hover:scale-110 transition-transform" />
+                  <span className="text-xs font-medium">Install Gabby App</span>
+                </button>
+              )}
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-full hover:bg-[#282a2c] transition-colors text-sm text-left text-[#c4c7c5] hover:text-white"
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-full hover:bg-[#282a2c] transition-colors text-sm text-left text-[#c4c7c5] hover:text-white cursor-pointer"
               >
                 <Settings size={18} />
                 <span className="text-xs">Settings & help</span>
@@ -1034,25 +1106,34 @@ function App() {
             <div className="flex flex-col items-center py-3 space-y-2">
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className="p-3 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors"
+                className="p-3 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer"
                 title="Expand sidebar"
               >
                 <Menu size={20} />
               </button>
               <button
                 onClick={createNewChat}
-                className="p-3 hover:bg-[#282a2c] rounded-full text-[#4E80EE] hover:text-white transition-colors"
+                className="p-3 hover:bg-[#282a2c] rounded-full text-[#4E80EE] hover:text-white transition-colors cursor-pointer"
                 title="New chat"
               >
                 <Plus size={20} />
               </button>
             </div>
 
-            {/* Settings Icon at Bottom */}
-            <div className="mt-auto flex flex-col items-center py-3 border-t border-white/5">
+            {/* Settings & Install Icons at Bottom */}
+            <div className="mt-auto flex flex-col items-center py-3 border-t border-white/5 space-y-1">
+              {!isAppInstalled && (
+                <button
+                  onClick={handleInstallApp}
+                  className="p-3 hover:bg-[#282a2c] rounded-full text-[#70CFFF] hover:text-white transition-colors cursor-pointer"
+                  title="Install Gabby App"
+                >
+                  <Download size={20} />
+                </button>
+              )}
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="p-3 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors"
+                className="p-3 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer"
                 title="Settings & help"
               >
                 <Settings size={20} />
@@ -1082,11 +1163,24 @@ function App() {
                 Gabby
               </span>
               <span className="text-xs text-[#8e918f] bg-[#1e1f20] px-2.5 py-0.5 rounded-full border border-white/5 ml-1 font-mono">
-                3.6 Flash
+                3.8 Flash
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Install Gabby PWA App Button */}
+            {!isAppInstalled && (
+              <button
+                type="button"
+                onClick={handleInstallApp}
+                className="px-3 py-1.5 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] border border-[#70CFFF]/40 hover:border-[#70CFFF]/70 text-[#70CFFF] hover:text-white text-xs font-medium flex items-center gap-1.5 transition-all shadow-sm group cursor-pointer"
+                title="Install Gabby as a standalone App"
+              >
+                <Download size={14} className="text-[#70CFFF] group-hover:scale-110 transition-transform" />
+                <span className="hidden sm:inline">Install App</span>
+              </button>
+            )}
+
             {/* Live Voice Mode Button */}
             <button
               type="button"

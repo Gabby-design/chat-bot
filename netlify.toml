@@ -1,9 +1,18 @@
+# Build settings
 [build]
   base = "ai-assistant/frontend"
   publish = "dist"
   command = "npm run build"
 
+# Redirect Rule 1: Optional API proxy pass-through
+[[redirects]]
+  from = "/api/*"
+  to = "/api/:splat"
+  status = 200
+
+# Redirect Rule 2: Single Page Application (SPA) client-side routing fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+  force = false

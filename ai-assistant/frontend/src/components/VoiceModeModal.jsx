@@ -82,12 +82,8 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
 
   const INTERRUPTION_KEYWORDS = [
     'wait', 'stop', 'hold on', 'hang on', 'pause', 'quiet', 'shut up',
-    'hush', 'listen', 'excuse me', 'hey', 'sorry', 'can you stop',
-    'wait a minute', 'wait a second', 'hold up', 'shh', 'please stop',
-    'wait wait', 'stop talking', 'give me a second', 'one second',
-    'one moment', 'just a second', 'hold off', 'stop please', 'okay stop',
-    'can i ask', 'quick question', 'question', 'tell me', 'who', 'what', 'why',
-    'where', 'when', 'how', 'wait what', 'wait who', 'wait why', 'what about'
+    'hush', 'please stop', 'stop talking', 'shh', 'hold up', 'cancel',
+    'okay stop', 'stop please', 'wait wait'
   ];
 
   // Self-Voice Echo Filter: Distinguishes assistant's own voice from user speech
@@ -102,15 +98,15 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
     );
     if (hasKeyword) return false;
 
-    const heardWords = clean.split(/\s+/).filter((w) => w.length > 2);
+    const heardWords = clean.split(/\s+/).filter((w) => w.length > 1);
     if (heardWords.length === 0) return true;
 
     const currentChunk = (currentChunkRef.current || '').toLowerCase().replace(/[.,!?;:'"“”\-—]/g, ' ');
     const recentAssistantSpeech = (lastSpokenTextRef.current || '').toLowerCase().replace(/[.,!?;:'"“”\-—]/g, ' ');
     const combinedAssistantSpeech = currentChunk + ' ' + recentAssistantSpeech;
 
-    // Substring check for partial leaks of 5+ characters
-    if (clean.length > 5 && combinedAssistantSpeech.includes(clean)) {
+    // Substring check for partial leaks of 4+ characters
+    if (clean.length > 4 && combinedAssistantSpeech.includes(clean)) {
       return true;
     }
 
@@ -122,7 +118,7 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
     }
 
     const echoRatio = matchedWords / heardWords.length;
-    return echoRatio > 0.35;
+    return echoRatio >= 0.2;
   };
 
   const updateVoiceState = (newState) => {
@@ -356,6 +352,16 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
 
           if (isEcho) {
             // Speaker sound leaking into mic: discard completely!
+            return;
+          }
+
+          // Check if user spoke an explicit stop keyword
+          const hasStopKeyword = INTERRUPTION_KEYWORDS.some(
+            (kw) => cleanHeard === kw || cleanHeard.startsWith(kw + ' ') || cleanHeard.includes(' ' + kw) || cleanHeard.endsWith(' ' + kw)
+          );
+
+          // If AI is actively speaking, single isolated syllables or short noises are likely mic bleed
+          if (!hasStopKeyword && cleanHeard.split(/\s+/).length < 3) {
             return;
           }
 
@@ -641,59 +647,70 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
 
   const stopSpeaking = () => handleInterrupt();
 
-  // Chunks text into small 2–5 word pieces for immediate TTS synthesis (< 30ms)
+  // Natural sentence & clause chunking engine for smooth, human-paced speech synthesis
   const extractChunksFromBuffer = (isFinalFlush = false) => {
     const chunks = [];
+    if (!wordBufferRef.current) return chunks;
+
     while (wordBufferRef.current && wordBufferRef.current.trim().length > 0) {
-      const words = wordBufferRef.current.trim().split(/\s+/);
+      const text = wordBufferRef.current;
+      const words = text.trim().split(/\s+/);
       if (words.length === 0) break;
 
-      // Final stream flush: take whatever words remain
+      // 1. Final flush when stream completes: deliver remaining sentences or clauses
       if (isFinalFlush) {
-        if (words.length > 5) {
-          const chunk = words.slice(0, 4).join(' ').trim();
-          wordBufferRef.current = words.slice(4).join(' ');
-          if (chunk) chunks.push(chunk);
-          continue;
-        } else {
-          const remaining = wordBufferRef.current.trim();
-          wordBufferRef.current = '';
-          if (remaining) chunks.push(remaining);
-          break;
+        const remaining = wordBufferRef.current.trim();
+        wordBufferRef.current = '';
+        if (remaining) {
+          const sentenceSplit = remaining.match(/[^.!?\n]+[.!?\n]+(?:\s+|$)|[^.!?\n]+$/g);
+          if (sentenceSplit && sentenceSplit.length > 0) {
+            for (const s of sentenceSplit) {
+              const cleaned = s.trim();
+              if (cleaned) chunks.push(cleaned);
+            }
+          } else {
+            chunks.push(remaining);
+          }
         }
-      }
-
-      // If we have fewer than 2 words, wait for at least 2 words
-      if (words.length < 2) {
         break;
       }
 
-      // Check for punctuation within the first 2-5 words
-      let cutIndex = -1;
-      for (let i = 1; i < Math.min(words.length, 5); i++) {
-        if (/[.!?,;:\n]/.test(words[i])) {
-          cutIndex = i + 1;
-          break;
+      // 2. Full sentence boundary: [.!?] followed by whitespace or newline
+      const sentenceMatch = text.match(/^([\s\S]*?[.!?])(?:\s+|\n+|$)/);
+      if (sentenceMatch) {
+        const sentenceCandidate = sentenceMatch[1].trim();
+        const sentenceWords = sentenceCandidate.split(/\s+/);
+        // Avoid cutting inside common abbreviations or file extensions (e.g., .toml, .js)
+        const isAbbreviation = /(?:e\.g|i\.e|mr|mrs|ms|dr|vs|etc|\.toml|\.json|\.js|\.jsx|\.ts|\.html|\.css)$/i.test(sentenceCandidate);
+
+        if (!isAbbreviation && sentenceWords.length >= 2) {
+          chunks.push(sentenceCandidate);
+          wordBufferRef.current = text.slice(sentenceMatch[0].length);
+          continue;
         }
       }
 
-      // If punctuation found within the 2-5 word window, cut there immediately
-      if (cutIndex !== -1) {
-        const chunk = words.slice(0, cutIndex).join(' ').trim();
-        wordBufferRef.current = words.slice(cutIndex).join(' ');
+      // 3. Natural clause boundary: comma, semicolon, colon, or em-dash (when at least 4 words have arrived)
+      const clauseMatch = text.match(/^([\s\S]*?[,;:—–])(?:\s+|\n+)/);
+      if (clauseMatch) {
+        const clauseCandidate = clauseMatch[1].trim();
+        const clauseWords = clauseCandidate.split(/\s+/);
+        if (clauseWords.length >= 4) {
+          chunks.push(clauseCandidate);
+          wordBufferRef.current = text.slice(clauseMatch[0].length);
+          continue;
+        }
+      }
+
+      // 4. Safe fallback for unusually long sentences without punctuation (> 12 words)
+      if (words.length >= 12) {
+        const chunk = words.slice(0, 8).join(' ').trim();
+        wordBufferRef.current = words.slice(8).join(' ');
         if (chunk) chunks.push(chunk);
         continue;
       }
 
-      // If buffer has reached 4+ words without punctuation, cut at 3 words to begin speech immediately!
-      if (words.length >= 4) {
-        const chunk = words.slice(0, 3).join(' ').trim();
-        wordBufferRef.current = words.slice(3).join(' ');
-        if (chunk) chunks.push(chunk);
-        continue;
-      }
-
-      // Wait for more words
+      // Wait for complete sentence or clause from stream
       break;
     }
     return chunks;
@@ -749,8 +766,8 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
     }
 
     const utterance = new SpeechSynthesisUtterance(chunkToSpeak);
-    utterance.rate = 1.25; // Fast, crisp, energetic conversational pace
-    utterance.pitch = 1.02;
+    utterance.rate = 1.05; // Natural, clear, human conversational pace
+    utterance.pitch = 1.0;
 
     const naturalVoice = selectedVoiceRef.current || getNaturalVoice();
     if (naturalVoice) utterance.voice = naturalVoice;
@@ -778,7 +795,12 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
       }
 
       if (speechQueueRef.current.length > 0) {
-        playNextChunk();
+        // Natural conversational breath/break between clauses or sentences (60ms)
+        setTimeout(() => {
+          if (!isCancelledRef.current && !isShuttingDownRef.current) {
+            playNextChunk();
+          }
+        }, 60);
       } else if (streamDoneRef.current) {
         isSpeakingRef.current = false;
         finishSpeakingAndResumeListening();
@@ -795,7 +817,11 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
         return;
       }
       if (speechQueueRef.current.length > 0) {
-        playNextChunk();
+        setTimeout(() => {
+          if (!isCancelledRef.current && !isShuttingDownRef.current) {
+            playNextChunk();
+          }
+        }, 60);
       } else if (streamDoneRef.current) {
         isSpeakingRef.current = false;
         finishSpeakingAndResumeListening();

@@ -448,23 +448,25 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
         isListeningRef.current = false;
         setIsMicActive(false);
 
-        // Seamless auto-recovery with a fresh instance if we should still be listening
+        // Auto-recovery only when truly in listening state (NEVER while assistant is speaking)
         if (
           isMountedRef.current &&
           !isShuttingDownRef.current &&
           !isMuted &&
-          (voiceStateRef.current === 'listening' || voiceStateRef.current === 'speaking')
+          voiceStateRef.current === 'listening' &&
+          !isSpeakingRef.current
         ) {
           restartTimeoutRef.current = setTimeout(() => {
             if (
               isMountedRef.current &&
               !isShuttingDownRef.current &&
               !isMuted &&
-              (voiceStateRef.current === 'listening' || voiceStateRef.current === 'speaking')
+              voiceStateRef.current === 'listening' &&
+              !isSpeakingRef.current
             ) {
               startListening();
             }
-          }, 80);
+          }, 100);
         }
       };
 
@@ -476,11 +478,12 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
         isMountedRef.current &&
         !isShuttingDownRef.current &&
         !isMuted &&
-        (voiceStateRef.current === 'listening' || voiceStateRef.current === 'speaking')
+        voiceStateRef.current === 'listening' &&
+        !isSpeakingRef.current
       ) {
         restartTimeoutRef.current = setTimeout(() => {
           startListening();
-        }, 200);
+        }, 250);
       }
     }
   };
@@ -702,10 +705,10 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
         }
       }
 
-      // 4. Safe fallback for unusually long sentences without punctuation (> 12 words)
-      if (words.length >= 12) {
-        const chunk = words.slice(0, 8).join(' ').trim();
-        wordBufferRef.current = words.slice(8).join(' ');
+      // 4. Safe fallback for unusually long sentences without punctuation (> 18 words)
+      if (words.length >= 18) {
+        const chunk = words.slice(0, 12).join(' ').trim();
+        wordBufferRef.current = words.slice(12).join(' ');
         if (chunk) chunks.push(chunk);
         continue;
       }
@@ -760,10 +763,8 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
     isSpeakingRef.current = true;
     updateVoiceState('speaking');
 
-    // Keep mic active for instant barge-in interruption while AI speaks
-    if (!isMuted && !isShuttingDownRef.current && !isListeningRef.current) {
-      startListening();
-    }
+    // Ensure mic is paused while assistant is speaking to prevent acoustic feedback
+    stopListening();
 
     const utterance = new SpeechSynthesisUtterance(chunkToSpeak);
     utterance.rate = 1.05; // Natural, clear, human conversational pace
@@ -782,9 +783,7 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
       }
       isSpeakingRef.current = true;
       updateVoiceState('speaking');
-      if (!isMuted && !isShuttingDownRef.current && !isListeningRef.current) {
-        startListening();
-      }
+      stopListening();
     };
 
     utterance.onend = () => {
@@ -830,21 +829,22 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
       }
     };
 
-    // Chrome TTS keep-alive timer
+    // Safe Chrome/Windows TTS resume check without disruptive pause()
     if (speechKeepAliveRef.current) {
       clearInterval(speechKeepAliveRef.current);
     }
     speechKeepAliveRef.current = setInterval(() => {
-      if (window.speechSynthesis && window.speechSynthesis.speaking) {
-        window.speechSynthesis.pause();
-        window.speechSynthesis.resume();
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
       } else {
         if (speechKeepAliveRef.current) {
           clearInterval(speechKeepAliveRef.current);
           speechKeepAliveRef.current = null;
         }
       }
-    }, 8000);
+    }, 4000);
 
     activeUtterancesRef.current.push(utterance);
 

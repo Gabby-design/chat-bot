@@ -74,6 +74,42 @@ async def delete_chat(chat_id: str):
     database.delete_chat(chat_id)
     return {"success": True}
 
+class TTSRequest(BaseModel):
+    text: str
+    voice_id: Optional[str] = "21m00Tcm4TlvDq8ikWAM"  # Default: Rachel (warm, natural conversational)
+
+@app.post("/api/tts")
+async def text_to_speech(request: TTSRequest):
+    load_dotenv(override=True)
+    elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not elevenlabs_api_key:
+        return {"available": False, "error": "No ELEVENLABS_API_KEY configured"}
+    
+    try:
+        import httpx
+        from fastapi.responses import Response
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{request.voice_id}"
+        headers = {
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": elevenlabs_api_key
+        }
+        data = {
+            "text": request.text,
+            "model_id": "eleven_turbo_v2_5",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.8
+            }
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=data, headers=headers)
+            if resp.status_code != 200:
+                return {"available": False, "error": resp.text}
+            return Response(content=resp.content, media_type="audio/mpeg")
+    except Exception as e:
+        return {"available": False, "error": str(e)}
+
 # Reusable persistent client cache for connection pooling and fast TTFT
 _cached_client = None
 def get_genai_client(api_key: str):
@@ -100,9 +136,9 @@ async def chat_stream(request: ChatRequest):
         # Save user message
         database.add_message(chat_id, "user", request.message)
         
-        # Get history for context: keep 3-4 messages in voice mode for rapid prompt processing and instant TTFT
+        # Keep 16 messages of rich conversation context memory in both chat and voice mode
         history_messages = database.get_chat_messages(chat_id)
-        history_limit = 4 if request.mode == "voice" else 16
+        history_limit = 16
         recent_history = history_messages[:-1][-history_limit:]
         
         # Convert history into google.genai Content objects
@@ -128,28 +164,20 @@ async def chat_stream(request: ChatRequest):
         async def generate():
             client = get_genai_client(current_api_key)
             
-            # Smart Model Routing:
-            # For Voice Mode: prioritize lowest latency (~0.6s) sub-second streaming
-            # For Chat Mode: prioritize deep reasoning, code generation, and top-tier intelligence
+            # Unified Model Routing for both Text and Voice:
+            # Respects user model selection with high-availability fallbacks
             model_selection = request.model or ""
             configured_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
             
-            # Smart Model Routing:
-            # Voice Mode: lowest latency (~1.0s) sub-second streaming
-            # Chat Mode: deep intelligence, high availability, fast generation
-            if request.mode == "voice":
+            if model_selection == "advanced":
                 primary_model = "gemini-3.8-flash"
-                fallback_models = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash"]
+                fallback_models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash"]
+            elif model_selection in ("fast", "lite"):
+                primary_model = "gemini-3.5-flash-lite"
+                fallback_models = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
             else:
-                if model_selection == "advanced":
-                    primary_model = "gemini-3.8-flash"
-                    fallback_models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash"]
-                elif model_selection in ("fast", "lite"):
-                    primary_model = "gemini-3.5-flash-lite"
-                    fallback_models = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
-                else:
-                    primary_model = configured_model
-                    fallback_models = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash"]
+                primary_model = configured_model
+                fallback_models = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash"]
             
             models_to_try = [primary_model]
             for model in fallback_models:
@@ -157,26 +185,30 @@ async def chat_stream(request: ChatRequest):
                     models_to_try.append(model)
             
             full_response = ""
+
+            # Unified ChatGPT Plus Intelligence for both Text and Voice
+            base_intelligence = (
+                "You are Gabby, a state-of-the-art AI assistant with top-tier intelligence, clarity, and depth—equivalent to ChatGPT Plus. "
+                "You are extraordinarily knowledgeable, insightful, articulate, and thoughtful. "
+                "You adapt seamlessly to any domain: deep coding, complex reasoning, creative writing, science, mathematics, analysis, and everyday chat. "
+                "Be direct, thorough, and smart, avoiding unnecessary fluff while providing high-value, accurate insights. "
+                "DIVERSITY & FRESH PERSPECTIVES: Never give carbon-copy or repetitive responses. If asked a similar or repeated question across conversations, approach it from a fresh creative angle, explore different nuances, provide varied examples, and bring a unique perspective."
+            )
+
             if request.mode == "voice":
                 system_instruction = (
-                    "You are Gabby, a fast, natural, perceptive, and friendly AI voice companion speaking live with the user just like ChatGPT Voice. "
-                    "CONVERSATIONAL VOICE RULES:\n"
-                    "1. Answer ONLY the user's latest question or message directly, naturally, and warmly.\n"
-                    "2. Speak naturally, articulately, and comprehensively. Provide clear, well-formed, and complete explanations without artificially cutting yourself short. Structure your speech into natural, complete sentences with clear punctuation (periods and commas) so that every clause and sentence can be spoken smoothly.\n"
-                    "3. When explaining steps, configurations (like redirect rules in netlify.toml), or answering questions, explain each point thoroughly one by one. Use commas for natural pauses within sentences, and periods to conclude each sentence.\n"
-                    "4. Never randomly tell stories or continue old topics unless the user explicitly asks for a story.\n"
-                    "5. Every new response must answer only the latest speech, never continuing an old sentence or story.\n"
-                    "6. NEVER EVER output markdown symbols (no asterisks *, hashtags #, bullet points -, code blocks, or emojis) since your output is spoken aloud by a speech synthesizer. Write strictly in clean, pronounceable English sentences.\n"
-                    "7. Speak in a human, engaging, conversational tone with natural sentence structure."
+                    f"{base_intelligence}\n\n"
+                    "SPOKEN VOICE DELIVERY RULES:\n"
+                    "1. Deliver your full, top-tier intelligent answer naturally and articulately in clear, flowing spoken English.\n"
+                    "2. Do NOT cut yourself short or arbitrarily limit your answer. Explain concepts, steps, and thoughts thoroughly and conversationally.\n"
+                    "3. Structure your response into well-formed sentences with clear punctuation (commas for natural breath pauses, periods to conclude sentences).\n"
+                    "4. NEVER output markdown symbols (no asterisks *, hashtags #, bullet points -, code blocks, or emojis) since your output is spoken aloud by a speech synthesizer. Express technical concepts and code conversationally in plain English sentences.\n"
+                    "5. Speak warmly and engagingly like a human conversation partner."
                 )
             else:
                 system_instruction = (
-                    "You are Gabby, a state-of-the-art AI assistant with top-tier intelligence, clarity, and depth—equivalent to ChatGPT Plus. "
-                    "You are extraordinarily knowledgeable, insightful, articulate, and thoughtful. "
-                    "You adapt to any domain: deep coding, complex reasoning, creative writing, science, mathematics, analysis, and everyday chat. "
-                    "Format responses beautifully with Markdown, clear headings, bullet points, and code blocks when appropriate. "
-                    "Be direct, thorough, and smart, avoiding unnecessary fluff while providing high-value, accurate insights. "
-                    "DIVERSITY & FRESH PERSPECTIVES: Never give carbon-copy or repetitive responses. If asked a similar or repeated question across conversations, approach it from a fresh creative angle, explore different nuances, provide varied examples, and bring a unique perspective."
+                    f"{base_intelligence}\n\n"
+                    "Format responses beautifully with Markdown, clear headings, bullet points, and code blocks when appropriate."
                 )
 
             # Emit the chat_id so frontend knows the active conversation ID
@@ -191,7 +223,7 @@ async def chat_stream(request: ChatRequest):
                         contents=contents,
                         config=types.GenerateContentConfig(
                             system_instruction=system_instruction,
-                            temperature=1.0 if request.mode == "voice" else 0.95,
+                            temperature=0.95,
                             top_p=0.95
                         )
                     )
@@ -199,16 +231,8 @@ async def chat_stream(request: ChatRequest):
                     async for chunk in response_stream:
                         if chunk.text:
                             full_response += chunk.text
-                            if request.mode == "voice":
-                                # Stream tokens word-by-word so frontend renders a true real-time typing effect
-                                words = re.findall(r'\S+\s*', chunk.text)
-                                for idx, w in enumerate(words):
-                                    yield f"data: {json.dumps({'text': w})}\n\n"
-                                    # Ultra-fast 8ms pacing for instant, high-speed typing
-                                    if idx > 0:
-                                        await asyncio.sleep(0.008)
-                            else:
-                                yield f"data: {json.dumps({'text': chunk.text})}\n\n"
+                            # Stream tokens naturally to both text and voice modes
+                            yield f"data: {json.dumps({'text': chunk.text})}\n\n"
                     
                     # Completed normally: save to database and signal completion
                     if full_response.strip():

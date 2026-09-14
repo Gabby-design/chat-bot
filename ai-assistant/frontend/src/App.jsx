@@ -4,7 +4,14 @@ import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut,
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast, { Toaster } from 'react-hot-toast';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import VoiceModeModal from './components/VoiceModeModal.jsx';
+import {
+  playGeminiVoice,
+  stopGeminiVoice,
+  GEMINI_VOICES,
+  DEFAULT_GEMINI_VOICE
+} from './utils/geminiVoice.js';
 
 // Dynamic API_BASE_URL:
 // - If custom VITE_API_BASE_URL is provided, use it.
@@ -49,12 +56,21 @@ const getEnglishVoice = () => {
   return anyEnglish || voices[0];
 };
 
-async function streamGeminiDirect({ prompt, conversationHistory = [], modelSelection = 'standard', mode = 'chat', signal, onToken }) {
-  let primaryModel = 'gemini-3.6-flash';
-  let fallbackModels = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.8-flash'];
+async function streamGeminiDirect({
+  prompt,
+  conversationHistory = [],
+  modelSelection = 'standard',
+  mode = 'chat',
+  activeGem = null,
+  attachedImage = null,
+  signal,
+  onToken
+}) {
+  let primaryModel = 'gemini-3.8-flash';
+  let fallbackModels = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.6-flash'];
   if (modelSelection === 'advanced') {
-    primaryModel = 'gemini-3.6-flash';
-    fallbackModels = ['gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.5-flash'];
+    primaryModel = 'gemini-3.7-flash';
+    fallbackModels = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
   } else if (modelSelection === 'fast' || modelSelection === 'lite') {
     primaryModel = 'gemini-3.5-flash-lite';
     fallbackModels = ['gemini-3.6-flash', 'gemini-flash-latest'];
@@ -62,7 +78,19 @@ async function streamGeminiDirect({ prompt, conversationHistory = [], modelSelec
 
   const modelsToTry = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
 
-  const baseIntelligence = "You are Gabby, a state-of-the-art AI assistant with top-tier intelligence, clarity, and depth—equivalent to ChatGPT Plus. You are extraordinarily knowledgeable, insightful, articulate, and thoughtful. You adapt seamlessly to any domain: deep coding, complex reasoning, creative writing, science, mathematics, analysis, and everyday chat. Be direct, thorough, and smart, avoiding unnecessary fluff while providing high-value, accurate insights.";
+  let baseIntelligence = "You are Gabby, a state-of-the-art AI assistant with top-tier intelligence, clarity, and depth—equivalent to ChatGPT Plus. You are extraordinarily knowledgeable, insightful, articulate, and thoughtful. You adapt seamlessly to any domain: deep coding, complex reasoning, creative writing, science, mathematics, analysis, and everyday chat. Be direct, thorough, and smart, avoiding unnecessary fluff while providing high-value, accurate insights.";
+
+  if (activeGem === 'code') {
+    baseIntelligence = "You are Code Expert, an elite senior software architect and programmer. Write modular, robust, clean code with detailed explanations, edge cases, and best practices.";
+  } else if (activeGem === 'writing') {
+    baseIntelligence = "You are Writing Assistant, a master editor and creative writer. Deliver compelling, polished, evocative prose, essays, articles, and communication.";
+  } else if (activeGem === 'math') {
+    baseIntelligence = "You are Math Tutor, a brilliant mathematician and educator. Solve complex mathematical problems step-by-step with proofs, intuition, and clear explanations.";
+  } else if (activeGem === 'brainstorm') {
+    baseIntelligence = "You are Creative Brainstormer, an imaginative strategist and innovator. Generate fresh, disruptive, multi-angle ideas and creative frameworks.";
+  } else if (activeGem === 'research') {
+    baseIntelligence = "You are Research Assistant, a rigorous researcher and analytical scientist. Deliver in-depth, fact-checked, structured analysis and synthesis.";
+  }
 
   const systemInstructionText = mode === 'voice'
     ? `${baseIntelligence}\n\nSPOKEN VOICE DELIVERY RULES:\n1. Deliver your full, top-tier intelligent answer naturally in clear, flowing spoken English.\n2. Do not output markdown symbols (no asterisks, hashtags, bullet points, or code blocks) since your output is spoken aloud.\n3. Speak warmly and engagingly.`
@@ -79,12 +107,21 @@ async function streamGeminiDirect({ prompt, conversationHistory = [], modelSelec
     }
   }
 
-  if (contents.length === 0 || contents[contents.length - 1]?.parts?.[0]?.text !== prompt) {
-    contents.push({
-      role: 'user',
-      parts: [{ text: prompt }]
+  const userParts = [];
+  if (attachedImage?.base64 && attachedImage?.mimeType) {
+    userParts.push({
+      inlineData: {
+        mimeType: attachedImage.mimeType,
+        data: attachedImage.base64
+      }
     });
   }
+  userParts.push({ text: prompt || (attachedImage ? 'Please analyze this image.' : 'Hello') });
+
+  contents.push({
+    role: 'user',
+    parts: userParts
+  });
 
   let lastError = null;
   for (const model of modelsToTry) {
@@ -214,6 +251,11 @@ function App() {
   // Ratings & Speech & Editing state
   const [ratings, setRatings] = useState({});
   const [speakingIndex, setSpeakingIndex] = useState(null);
+  const [audioLoadingIndex, setAudioLoadingIndex] = useState(null);
+  const [selectedGeminiVoice, setSelectedGeminiVoice] = useState(() => {
+    return localStorage.getItem('gabby_gemini_voice') || DEFAULT_GEMINI_VOICE;
+  });
+  const [isVoiceSelectorOpen, setIsVoiceSelectorOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
   const [editingText, setEditingText] = useState('');
   const abortControllerRef = useRef(null);
@@ -255,6 +297,12 @@ function App() {
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState('standard');
+
+  // Active Gem Persona & Multimodal Attachment
+  const [activeGem, setActiveGem] = useState(null);
+  const [attachedImage, setAttachedImage] = useState(null);
+  const imageInputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // PWA Install State
   const [installPrompt, setInstallPrompt] = useState(null);
@@ -573,22 +621,10 @@ function App() {
     });
   };
 
-  const toggleSpeech = (index, text) => {
-    if (!('speechSynthesis' in window)) {
-      toast.error('Text-to-speech is not supported in this browser.');
-      return;
-    }
-
-    if (speakingIndex === index) {
-      window.speechSynthesis.cancel();
-      setSpeakingIndex(null);
-      return;
-    }
-
+  const fallbackSpeechSynthesis = (index, text) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
-
-    // Strip code blocks and markdown markers for clear voice output
-    const cleanText = text
+    const clean = text
       .replace(/```[\s\S]*?```/g, 'Code block omitted.')
       .replace(/`([^`]+)`/g, '$1')
       .replace(/[*_~#]/g, '')
@@ -597,36 +633,117 @@ function App() {
       .replace(/\s+/g, ' ')
       .trim();
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
+    const utterance = new SpeechSynthesisUtterance(clean);
     utterance.lang = 'en-US';
-
     const englishVoice = getEnglishVoice();
-    if (englishVoice) {
-      utterance.voice = englishVoice;
-      utterance.lang = englishVoice.lang || 'en-US';
-    }
-
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-
+    if (englishVoice) utterance.voice = englishVoice;
     utterance.onend = () => setSpeakingIndex(null);
     utterance.onerror = () => setSpeakingIndex(null);
-
     setSpeakingIndex(index);
     window.speechSynthesis.speak(utterance);
   };
 
+  const toggleSpeech = async (index, text) => {
+    if (speakingIndex === index || audioLoadingIndex === index) {
+      stopGeminiVoice();
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      setSpeakingIndex(null);
+      setAudioLoadingIndex(null);
+      return;
+    }
+
+    stopGeminiVoice();
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+
+    await playGeminiVoice(text, {
+      voice: selectedGeminiVoice,
+      apiKey: GEMINI_API_KEY,
+      onLoading: (isLoading) => {
+        setAudioLoadingIndex(isLoading ? index : null);
+      },
+      onStart: () => {
+        setAudioLoadingIndex(null);
+        setSpeakingIndex(index);
+      },
+      onEnd: () => {
+        setSpeakingIndex(null);
+        setAudioLoadingIndex(null);
+      },
+      onError: (err) => {
+        console.warn('[Gemini Voice] Falling back to device synthesizer:', err);
+        setAudioLoadingIndex(null);
+        fallbackSpeechSynthesis(index, text);
+      }
+    });
+  };
+
   useEffect(() => {
     const handleGlobalSpeechKey = (e) => {
-      if (e.key === 'Escape' && speakingIndex !== null) {
-        window.speechSynthesis.cancel();
+      if (e.key === 'Escape' && (speakingIndex !== null || audioLoadingIndex !== null)) {
+        stopGeminiVoice();
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
         setSpeakingIndex(null);
+        setAudioLoadingIndex(null);
         toast('Speech stopped', { icon: '⏹', id: 'global-tts-stop' });
       }
     };
     window.addEventListener('keydown', handleGlobalSpeechKey);
     return () => window.removeEventListener('keydown', handleGlobalSpeechKey);
-  }, [speakingIndex]);
+  }, [speakingIndex, audioLoadingIndex]);
+
+  // Image and File Attachment Handlers
+  const handleImageUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload a valid image (PNG, JPG, WebP, GIF)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (loadEvt) => {
+      const dataUrl = loadEvt.target.result;
+      const base64 = dataUrl.split(',')[1];
+      setAttachedImage({
+        dataUrl,
+        base64,
+        mimeType: file.type,
+        name: file.name
+      });
+      setIsAttachmentOpen(false);
+      toast.success(`Attached image: ${file.name}`);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (loadEvt) => {
+      const content = loadEvt.target.result;
+      const ext = file.name.split('.').pop() || '';
+      setInput((prev) => `${prev ? prev + '\n\n' : ''}\`\`\`${ext} [${file.name}]\n${content}\n\`\`\`\n`);
+      setIsAttachmentOpen(false);
+      toast.success(`Attached code file: ${file.name}`);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Gems Selection
+  const handleSelectGem = (gemId) => {
+    setActiveGem(gemId);
+    setIsGemsOpen(false);
+    const gemNames = {
+      code: 'Code Expert',
+      writing: 'Writing Assistant',
+      math: 'Math Tutor',
+      brainstorm: 'Creative Brainstormer',
+      research: 'Research Assistant'
+    };
+    toast.success(`Activated Gem: ${gemNames[gemId] || 'Custom Gem'}`);
+  };
 
 
   const handleStartEdit = (index, content) => {
@@ -692,7 +809,7 @@ function App() {
     await streamResponse(userMsg.content, currentChatId);
   };
 
-  const streamResponse = async (message, chatIdToUse) => {
+  const streamResponse = async (message, chatIdToUse, currentImg = null) => {
     setIsLoading(true);
     setIsStreaming(true);
 
@@ -706,25 +823,29 @@ function App() {
 
     try {
       let response = null;
-      try {
-        response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, chat_id: chatIdToUse, model: selectedModel }),
-          signal: controller.signal
-        });
-      } catch (err) {
-        console.warn('Backend stream request failed, falling back to direct Gemini streaming:', err);
+      if (!currentImg) {
+        try {
+          response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, chat_id: chatIdToUse, model: selectedModel }),
+            signal: controller.signal
+          });
+        } catch (err) {
+          console.warn('Backend stream request failed, falling back to direct Gemini streaming:', err);
+        }
       }
 
-      if (!response || !response.ok) {
-        // Fallback directly to client-side Gemini streaming
+      if (currentImg || !response || !response.ok) {
+        // Fallback directly to client-side Gemini streaming (or multimodal if image attached)
         let streamed = '';
         await streamGeminiDirect({
           prompt: message,
           conversationHistory: messages,
           modelSelection: selectedModel,
           mode: 'chat',
+          activeGem,
+          attachedImage: currentImg,
           signal: controller.signal,
           onToken: (token) => {
             streamed += token;
@@ -851,20 +972,27 @@ function App() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if ((!input.trim() && !attachedImage) || isLoading) return;
 
-    const userMsg = { role: 'user', content: input };
+    const currentImg = attachedImage;
+    const userMsg = {
+      role: 'user',
+      content: input,
+      image: currentImg?.dataUrl || null
+    };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
+    setAttachedImage(null);
 
     let activeChatId = currentChatId;
 
     if (!activeChatId) {
+      const chatTitle = (input || 'Image Analysis').slice(0, 30);
       try {
         const res = await fetch(`${API_BASE_URL}/api/chats`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: input.slice(0, 30) })
+          body: JSON.stringify({ title: chatTitle })
         });
         const contentType = res.headers.get('content-type') || '';
         if (res.ok && contentType.includes('application/json')) {
@@ -875,16 +1003,16 @@ function App() {
         } else {
           activeChatId = 'local-' + Date.now();
           setCurrentChatId(activeChatId);
-          saveChatLocally(activeChatId, [userMsg], input.slice(0, 30));
+          saveChatLocally(activeChatId, [userMsg], chatTitle);
         }
       } catch (err) {
         activeChatId = 'local-' + Date.now();
         setCurrentChatId(activeChatId);
-        saveChatLocally(activeChatId, [userMsg], input.slice(0, 30));
+        saveChatLocally(activeChatId, [userMsg], chatTitle);
       }
     }
 
-    await streamResponse(userMsg.content, activeChatId);
+    await streamResponse(userMsg.content, activeChatId, currentImg);
   };
 
   const handleVoiceMessage = async (spokenText, onChunk, interruptedContext = null) => {
@@ -933,6 +1061,7 @@ function App() {
           conversationHistory: messages,
           modelSelection: selectedModel,
           mode: 'voice',
+          activeGem,
           signal: controller.signal,
           onToken: (token) => {
             streamed += token;
@@ -1220,15 +1349,18 @@ function App() {
           )}
         </button>
 
-        {/* Read Aloud / TTS Button (Native English) */}
+        {/* Read Aloud / TTS Button (Authentic Gemini Voice) */}
         <button
           onClick={() => toggleSpeech(index, msg.content)}
+          disabled={audioLoadingIndex === index}
           className={`p-1 sm:p-1.5 px-1.5 sm:px-2 rounded-md sm:rounded-lg text-[11px] sm:text-xs flex items-center gap-1 sm:gap-1.5 transition-colors border ${
             isSpeaking
-              ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
+              ? 'bg-gradient-to-r from-[#4E80EE]/20 to-[#9B72CF]/20 text-[#70CFFF] border-[#70CFFF]/40 shadow-sm'
+              : audioLoadingIndex === index
+              ? 'bg-white/5 text-[#8e918f] border-white/10'
               : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
           }`}
-          title={isSpeaking ? 'Stop speaking' : 'Read aloud in English'}
+          title={isSpeaking ? 'Stop speaking' : `Listen with Gemini ${selectedGeminiVoice} voice`}
         >
           {isSpeaking ? (
             <>
@@ -1239,6 +1371,11 @@ function App() {
               </div>
               <VolumeX size={12} className="sm:w-3.5 sm:h-3.5" />
               <span className="text-[10px] sm:text-[11px] hidden sm:inline">Stop</span>
+            </>
+          ) : audioLoadingIndex === index ? (
+            <>
+              <div className="w-3 h-3 border-2 border-[#70CFFF] border-t-transparent rounded-full animate-spin" />
+              <span className="text-[10px] sm:text-[11px]">Gemini Voice...</span>
             </>
           ) : (
             <>
@@ -1522,6 +1659,32 @@ function App() {
                 </span>
                 <ChevronDown size={10} className="sm:w-[11px] sm:h-[11px]" />
               </button>
+
+              {/* Gemini Voice Selector Button */}
+              <button
+                type="button"
+                onClick={() => setIsVoiceSelectorOpen(!isVoiceSelectorOpen)}
+                className="text-[10px] sm:text-[11px] text-[#70CFFF] hover:text-white bg-[#1e1f20] hover:bg-[#282a2c] px-2 sm:px-2.5 py-0.5 rounded-full border border-[#70CFFF]/30 hover:border-[#70CFFF]/60 ml-0.5 font-mono flex items-center gap-1 transition-colors cursor-pointer"
+                title="Select Gemini Neural Voice"
+              >
+                <Volume2 size={11} className="text-[#70CFFF]" />
+                <span className="hidden xs:inline">{selectedGeminiVoice}</span>
+                <ChevronDown size={10} className="sm:w-[11px] sm:h-[11px]" />
+              </button>
+
+              {/* Active Gem Indicator */}
+              {activeGem && (
+                <div className="hidden md:flex items-center gap-1 text-[10px] text-purple-300 bg-purple-900/30 border border-purple-500/30 px-2 py-0.5 rounded-full">
+                  <span>Gem: {activeGem}</span>
+                  <button
+                    onClick={() => setActiveGem(null)}
+                    className="hover:text-white ml-0.5 cursor-pointer"
+                    title="Reset to default Gemini"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-3">
@@ -1661,9 +1824,20 @@ function App() {
                       ) : (
                         /* Display User Bubble */
                         <div className="inline-flex flex-col items-end group/user">
-                          <div className="inline-block text-[13px] sm:text-[14.5px] md:text-[15px] leading-snug sm:leading-relaxed bg-[#282a2c] text-[#e3e3e3] rounded-2xl sm:rounded-3xl rounded-tr-sm px-3.5 py-2 sm:px-5 sm:py-3 border border-white/5 shadow-sm">
-                            <p className="whitespace-pre-wrap text-left">{msg.content}</p>
-                          </div>
+                          {msg.image && (
+                            <div className="mb-2 max-w-sm rounded-2xl overflow-hidden border border-white/10 shadow-lg bg-black/40">
+                              <img
+                                src={msg.image}
+                                alt="User uploaded attachment"
+                                className="max-h-64 w-auto object-contain rounded-2xl"
+                              />
+                            </div>
+                          )}
+                          {msg.content && (
+                            <div className="inline-block text-[13px] sm:text-[14.5px] md:text-[15px] leading-snug sm:leading-relaxed bg-[#282a2c] text-[#e3e3e3] rounded-2xl sm:rounded-3xl rounded-tr-sm px-3.5 py-2 sm:px-5 sm:py-3 border border-white/5 shadow-sm">
+                              <p className="whitespace-pre-wrap text-left">{msg.content}</p>
+                            </div>
+                          )}
                           {/* User action buttons on hover */}
                           <div className="opacity-0 group-hover/user:opacity-100 transition-opacity mt-1 flex items-center gap-1">
                             <button
@@ -1734,7 +1908,47 @@ function App() {
         {/* Input Area (Gemini Floating Pill) */}
         <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#131314] via-[#131314]/95 to-transparent px-2.5 sm:px-4 pt-4 sm:pt-8 pb-3 sm:pb-5 pointer-events-none">
           <div className="max-w-3xl mx-auto w-full relative pointer-events-auto">
-            <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[24px] sm:rounded-[28px] border border-[#282a2c] focus-within:border-white/20 transition-all shadow-2xl">
+            {/* Hidden file & image inputs */}
+            <input
+              type="file"
+              ref={imageInputRef}
+              onChange={handleImageUpload}
+              accept="image/*"
+              className="hidden"
+            />
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept=".txt,.js,.jsx,.ts,.tsx,.py,.json,.html,.css,.md,.csv,.c,.cpp,.java,.go,.rs"
+              className="hidden"
+            />
+
+            <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[24px] sm:rounded-[28px] border border-[#282a2c] focus-within:border-white/20 transition-all shadow-2xl overflow-hidden">
+              {attachedImage && (
+                <div className="px-3 sm:px-4 pt-2.5 pb-1 flex items-center gap-2.5 border-b border-white/5 bg-white/[0.02]">
+                  <div className="relative group shrink-0">
+                    <img
+                      src={attachedImage.dataUrl}
+                      alt="Attachment preview"
+                      className="h-12 w-12 object-cover rounded-lg border border-white/10 shadow"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setAttachedImage(null)}
+                      className="absolute -top-1.5 -right-1.5 bg-black/80 hover:bg-red-500 text-white rounded-full p-0.5 border border-white/20 shadow transition-colors cursor-pointer"
+                      title="Remove image"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  <div className="text-xs min-w-0 flex-1">
+                    <p className="text-[#e3e3e3] font-medium truncate">{attachedImage.name}</p>
+                    <p className="text-[11px] text-[#70CFFF]">Gemini Vision ready</p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-end gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5">
                 {/* Plus button for attachments */}
                 <button
@@ -1806,9 +2020,9 @@ function App() {
                   ) : (
                     <button
                       type="submit"
-                      disabled={!input.trim() || isLoading}
+                      disabled={(!input.trim() && !attachedImage) || isLoading}
                       className={`p-1.5 sm:p-2 rounded-full transition-all flex items-center justify-center cursor-pointer ${
-                        input.trim() && !isLoading
+                        (input.trim() || attachedImage) && !isLoading
                           ? 'bg-white text-[#131314] hover:bg-gray-200 shadow-md scale-100 hover:scale-105 active:scale-95'
                           : 'bg-white/5 text-[#8e918f] cursor-not-allowed'
                       }`}
@@ -1826,7 +2040,7 @@ function App() {
           </div>
         </div>
 
-        {/* Global Model Selector Dropdown Modal (accessible on mobile from header and on desktop from input pill) */}
+        {/* Global Model Selector Dropdown Modal */}
         {isModelSelectorOpen && (
           <div className="fixed inset-0 z-50 flex items-start sm:items-end justify-center sm:justify-end p-4 sm:p-20 bg-black/40 backdrop-blur-xs" onClick={() => setIsModelSelectorOpen(false)}>
             <div
@@ -1881,6 +2095,50 @@ function App() {
                 </div>
                 <div className="text-[11px] text-[#8e918f] mt-0.5">Sub-second immediate voice & quick replies</div>
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Global Gemini Voice Selector Dropdown Modal */}
+        {isVoiceSelectorOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-start sm:items-end justify-center sm:justify-end p-4 sm:p-20 bg-black/40 backdrop-blur-xs"
+            onClick={() => setIsVoiceSelectorOpen(false)}
+          >
+            <div
+              className="w-full max-w-xs bg-[#1e1f20] border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-2 space-y-1 animate-fade-in mt-14 sm:mt-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-3 py-1.5 text-xs font-semibold text-[#8e918f] border-b border-white/5 flex items-center justify-between">
+                <span>Gemini Neural Voices</span>
+                <span className="text-[10px] text-[#70CFFF] font-mono">Studio 24kHz</span>
+              </div>
+              {GEMINI_VOICES.map((v) => (
+                <button
+                  key={v.name}
+                  onClick={() => {
+                    setSelectedGeminiVoice(v.name);
+                    setIsVoiceSelectorOpen(false);
+                    toast.success(`Voice set to ${v.name} (${v.gender})`);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
+                    selectedGeminiVoice === v.name
+                      ? 'bg-[#4E80EE]/20 text-[#70CFFF] border border-[#4E80EE]/30'
+                      : 'text-[#c4c7c5] hover:bg-[#282a2c]'
+                  }`}
+                >
+                  <div className="font-semibold text-xs flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Volume2 size={13} className={selectedGeminiVoice === v.name ? 'text-[#70CFFF]' : 'text-gray-400'} />
+                      <span>{v.name}</span>
+                    </span>
+                    <span className="text-[10px] bg-white/5 px-1.5 py-0.5 rounded text-gray-300 font-mono">
+                      {v.gender}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-[#8e918f] mt-0.5 pl-5">{v.description}</div>
+                </button>
+              ))}
             </div>
           </div>
         )}
@@ -1990,75 +2248,138 @@ function App() {
                 <Gem size={20} className="text-purple-400" />
                 <h2 className="text-lg font-semibold text-white">Gems</h2>
               </div>
-              <button
-                onClick={() => setIsGemsOpen(false)}
-                className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                {activeGem && (
+                  <button
+                    onClick={() => {
+                      setActiveGem(null);
+                      toast('Reset to default Gemini persona', { icon: '✨' });
+                    }}
+                    className="text-xs text-purple-300 hover:text-white px-2 py-1 rounded-md bg-purple-500/20 border border-purple-500/30 transition-colors cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsGemsOpen(false)}
+                  className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-              <p className="text-sm text-gray-400 mb-4">Custom AI assistants with specialized expertise</p>
+              <p className="text-sm text-gray-400 mb-4">Select a specialized AI persona to configure Gabby's intelligence</p>
 
               {/* Gem Cards */}
-              <button className="w-full p-4 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 hover:border-purple-400/50 transition-all text-left group">
+              <button
+                onClick={() => handleSelectGem('code')}
+                className={`w-full p-4 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border transition-all text-left group cursor-pointer ${
+                  activeGem === 'code' ? 'border-purple-400 ring-2 ring-purple-500/50 shadow-lg' : 'border-purple-500/30 hover:border-purple-400/50'
+                }`}
+              >
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
                     <Code size={20} className="text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-white font-medium mb-1">Code Expert</h3>
-                    <p className="text-xs text-gray-400">Specialized in programming, debugging, and code reviews</p>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-white font-medium mb-1">Code Expert</h3>
+                      {activeGem === 'code' && (
+                        <span className="text-[10px] bg-purple-500/40 text-purple-200 px-2 py-0.5 rounded-full font-semibold">Active</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400">Specialized in programming, debugging, architecture, and code reviews</p>
                   </div>
                 </div>
               </button>
 
-              <button className="w-full p-4 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30 hover:border-blue-400/50 transition-all text-left group">
+              <button
+                onClick={() => handleSelectGem('writing')}
+                className={`w-full p-4 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border transition-all text-left group cursor-pointer ${
+                  activeGem === 'writing' ? 'border-blue-400 ring-2 ring-blue-500/50 shadow-lg' : 'border-blue-500/30 hover:border-blue-400/50'
+                }`}
+              >
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shrink-0">
                     <FileText size={20} className="text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-white font-medium mb-1">Writing Assistant</h3>
-                    <p className="text-xs text-gray-400">Expert in creative writing, editing, and content creation</p>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-white font-medium mb-1">Writing Assistant</h3>
+                      {activeGem === 'writing' && (
+                        <span className="text-[10px] bg-blue-500/40 text-blue-200 px-2 py-0.5 rounded-full font-semibold">Active</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400">Expert in creative writing, editing, copywriting, and storytelling</p>
                   </div>
                 </div>
               </button>
 
-              <button className="w-full p-4 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 hover:border-green-400/50 transition-all text-left group">
+              <button
+                onClick={() => handleSelectGem('math')}
+                className={`w-full p-4 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border transition-all text-left group cursor-pointer ${
+                  activeGem === 'math' ? 'border-green-400 ring-2 ring-green-500/50 shadow-lg' : 'border-green-500/30 hover:border-green-400/50'
+                }`}
+              >
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center shrink-0">
                     <Calculator size={20} className="text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-white font-medium mb-1">Math Tutor</h3>
-                    <p className="text-xs text-gray-400">Helps with math problems, explanations, and learning</p>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-white font-medium mb-1">Math Tutor</h3>
+                      {activeGem === 'math' && (
+                        <span className="text-[10px] bg-green-500/40 text-green-200 px-2 py-0.5 rounded-full font-semibold">Active</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400">Step-by-step math solver, proofs, calculations, and STEM reasoning</p>
                   </div>
                 </div>
               </button>
 
-              <button className="w-full p-4 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border border-orange-500/30 hover:border-orange-400/50 transition-all text-left group">
+              <button
+                onClick={() => handleSelectGem('brainstorm')}
+                className={`w-full p-4 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border transition-all text-left group cursor-pointer ${
+                  activeGem === 'brainstorm' ? 'border-orange-400 ring-2 ring-orange-500/50 shadow-lg' : 'border-orange-500/30 hover:border-orange-400/50'
+                }`}
+              >
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center shrink-0">
                     <Sparkles size={20} className="text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-white font-medium mb-1">Creative Brainstormer</h3>
-                    <p className="text-xs text-gray-400">Generates ideas, concepts, and creative solutions</p>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-white font-medium mb-1">Creative Brainstormer</h3>
+                      {activeGem === 'brainstorm' && (
+                        <span className="text-[10px] bg-orange-500/40 text-orange-200 px-2 py-0.5 rounded-full font-semibold">Active</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400">Out-of-the-box conceptual thinking, innovative strategies, and ideas</p>
                   </div>
                 </div>
               </button>
 
-              <button className="w-full p-4 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/30 hover:border-indigo-400/50 transition-all text-left group">
+              <button
+                onClick={() => handleSelectGem('research')}
+                className={`w-full p-4 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border transition-all text-left group cursor-pointer ${
+                  activeGem === 'research' ? 'border-indigo-400 ring-2 ring-indigo-500/50 shadow-lg' : 'border-indigo-500/30 hover:border-indigo-400/50'
+                }`}
+              >
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center shrink-0">
                     <Search size={20} className="text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-white font-medium mb-1">Research Assistant</h3>
-                    <p className="text-xs text-gray-400">Helps with research, fact-checking, and analysis</p>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-white font-medium mb-1">Research Assistant</h3>
+                      {activeGem === 'research' && (
+                        <span className="text-[10px] bg-indigo-500/40 text-indigo-200 px-2 py-0.5 rounded-full font-semibold">Active</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400">Deep academic synthesis, fact-checking, literature review, and citations</p>
                   </div>
                 </div>
               </button>
@@ -2066,7 +2387,17 @@ function App() {
 
             {/* Footer */}
             <div className="p-4 border-t border-white/10">
-              <button className="w-full px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2">
+              <button
+                onClick={() => {
+                  const customPersona = prompt('Enter a custom instruction or persona for Gabby:');
+                  if (customPersona && customPersona.trim()) {
+                    setActiveGem('custom:' + customPersona.trim());
+                    setIsGemsOpen(false);
+                    toast.success('Custom Gem persona activated!');
+                  }
+                }}
+                className="w-full px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
                 <Plus size={16} />
                 Create Custom Gem
               </button>
@@ -2115,6 +2446,33 @@ function App() {
                       <p className="text-xs text-gray-500 mt-0.5">{darkMode ? 'Currently enabled' : 'Currently disabled'}</p>
                     </div>
                     <div className={`toggle-switch ${darkMode ? 'active' : ''}`}></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Gemini Voice Section */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                  <Volume2 size={16} />
+                  Gemini Neural Voice
+                </h3>
+                <div className="space-y-2">
+                  <div className="p-3 rounded-lg bg-white/5 space-y-2">
+                    <label className="text-xs text-gray-400">Default Speaking Voice</label>
+                    <select
+                      value={selectedGeminiVoice}
+                      onChange={(e) => {
+                        setSelectedGeminiVoice(e.target.value);
+                        toast.success(`Voice set to ${e.target.value}`);
+                      }}
+                      className="w-full px-3 py-2 bg-[#131314] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#70CFFF] cursor-pointer"
+                    >
+                      {GEMINI_VOICES.map((v) => (
+                        <option key={v.name} value={v.name}>
+                          {v.name} ({v.gender}) - {v.description}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
@@ -2429,47 +2787,36 @@ function App() {
       {isAttachmentOpen && (
         <div className="fixed inset-0 z-40" onClick={() => setIsAttachmentOpen(false)}>
           <div
-            className="absolute bottom-24 left-8 w-64 bg-[#2A2A2A] border border-white/10 rounded-lg shadow-xl overflow-hidden"
+            className="absolute bottom-24 left-4 sm:left-8 w-64 bg-[#1e1f20] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-fade-in"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-2 space-y-1">
               <button
+                type="button"
                 onClick={() => {
-                  alert('File upload coming soon!');
                   setIsAttachmentOpen(false);
+                  fileInputRef.current?.click();
                 }}
-                className="w-full text-left px-3 py-2.5 rounded-lg text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-3"
+                className="w-full text-left px-3 py-2.5 rounded-xl text-gray-300 hover:bg-[#282a2c] transition-colors flex items-center gap-3 cursor-pointer"
               >
-                <FileText size={18} className="text-blue-400" />
+                <FileText size={18} className="text-[#4E80EE]" />
                 <div>
-                  <div className="font-medium text-sm text-white">Upload file</div>
-                  <div className="text-xs text-gray-400">PDF, TXT, DOC</div>
+                  <div className="font-medium text-xs text-white">Upload code / text</div>
+                  <div className="text-[11px] text-[#8e918f]">JS, PY, HTML, TXT, JSON</div>
                 </div>
               </button>
               <button
+                type="button"
                 onClick={() => {
-                  alert('Image upload coming soon!');
                   setIsAttachmentOpen(false);
+                  imageInputRef.current?.click();
                 }}
-                className="w-full text-left px-3 py-2.5 rounded-lg text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-3"
+                className="w-full text-left px-3 py-2.5 rounded-xl text-gray-300 hover:bg-[#282a2c] transition-colors flex items-center gap-3 cursor-pointer"
               >
                 <span className="text-lg">🖼️</span>
                 <div>
-                  <div className="font-medium text-sm text-white">Upload image</div>
-                  <div className="text-xs text-gray-400">JPG, PNG, GIF</div>
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  alert('Code upload coming soon!');
-                  setIsAttachmentOpen(false);
-                }}
-                className="w-full text-left px-3 py-2.5 rounded-lg text-gray-300 hover:bg-white/5 transition-colors flex items-center gap-3"
-              >
-                <Code size={18} className="text-green-400" />
-                <div>
-                  <div className="font-medium text-sm text-white">Upload code</div>
-                  <div className="text-xs text-gray-400">Any programming language</div>
+                  <div className="font-medium text-xs text-white">Upload image (Vision)</div>
+                  <div className="text-[11px] text-[#8e918f]">JPG, PNG, WebP, GIF</div>
                 </div>
               </button>
             </div>
@@ -2478,34 +2825,39 @@ function App() {
       )}
 
       {/* Floating Speech Status Pill when reading aloud in chat */}
-      {speakingIndex !== null && (
-        <div className="fixed bottom-28 right-6 z-40 flex items-center gap-3 bg-[#1e2330]/95 backdrop-blur-md border border-rose-500/40 text-white px-4 py-2.5 rounded-full shadow-2xl animate-fade-in">
+      {(speakingIndex !== null || audioLoadingIndex !== null) && (
+        <div className="fixed bottom-28 right-6 z-40 flex items-center gap-3 bg-[#1e2330]/95 backdrop-blur-md border border-[#4E80EE]/40 text-white px-4 py-2.5 rounded-full shadow-2xl animate-fade-in">
           <div className="flex items-center gap-1">
-            <span className="live-eq-bar bg-rose-400 !h-4" />
-            <span className="live-eq-bar bg-rose-400 !h-4" />
-            <span className="live-eq-bar bg-rose-400 !h-4" />
+            <span className="live-eq-bar bg-[#70CFFF] !h-4" />
+            <span className="live-eq-bar bg-[#70CFFF] !h-4" />
+            <span className="live-eq-bar bg-[#70CFFF] !h-4" />
           </div>
-          <span className="text-xs text-gray-200 font-medium">Gabby is speaking...</span>
+          <span className="text-xs text-gray-200 font-medium">
+            {audioLoadingIndex !== null ? 'Gemini audio loading...' : `Gabby speaking (${selectedGeminiVoice})...`}
+          </span>
           <button
             onClick={() => {
-              window.speechSynthesis.cancel();
+              stopGeminiVoice();
+              if ('speechSynthesis' in window) window.speechSynthesis.cancel();
               setSpeakingIndex(null);
+              setAudioLoadingIndex(null);
               toast('Speech stopped', { icon: '⏹', id: 'tts-stopped' });
             }}
-            className="px-3 py-1 text-xs bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-full font-semibold transition-all border border-rose-500/30 flex items-center gap-1"
+            className="px-3 py-1 text-xs bg-white/10 hover:bg-white/20 text-gray-200 rounded-full font-semibold transition-all border border-white/20 flex items-center gap-1 cursor-pointer"
           >
-            <Square size={10} className="fill-rose-300" />
+            <Square size={10} className="fill-current" />
             <span>Stop (Esc)</span>
           </button>
         </div>
       )}
 
-      {/* Live Voice Mode Overlay (ChatGPT Voice Style) */}
+      {/* Live Voice Mode Overlay (Gemini 24kHz Studio Voice Style) */}
       {isVoiceModeOpen && (
         <VoiceModeModal
           isOpen={isVoiceModeOpen}
           onClose={() => {
             setIsVoiceModeOpen(false);
+            stopGeminiVoice();
             if ('speechSynthesis' in window) {
               window.speechSynthesis.cancel();
             }
@@ -2514,8 +2866,13 @@ function App() {
           onAbort={handleAbortStream}
           onNewChat={createNewChat}
           messages={messages}
+          selectedVoice={selectedGeminiVoice}
+          onVoiceChange={setSelectedGeminiVoice}
+          apiKey={getClientGeminiKey()}
+          activeGem={activeGem}
           onType={() => {
             setIsVoiceModeOpen(false);
+            stopGeminiVoice();
             setTimeout(() => {
               const inputEl = document.querySelector('textarea');
               if (inputEl) inputEl.focus();
@@ -2523,6 +2880,9 @@ function App() {
           }}
         />
       )}
+
+      {/* Vercel Speed Insights */}
+      <SpeedInsights />
 
 
     </div>

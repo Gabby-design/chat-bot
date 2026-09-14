@@ -1,6 +1,6 @@
 // src/App.jsx
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff, Download } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff, Download, Brain, Globe, Maximize2, ExternalLink } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast, { Toaster } from 'react-hot-toast';
@@ -12,6 +12,7 @@ import {
   GEMINI_VOICES,
   DEFAULT_GEMINI_VOICE
 } from './utils/geminiVoice.js';
+import { performWebSearch } from './utils/webSearch.js';
 
 // Dynamic API_BASE_URL:
 // - If custom VITE_API_BASE_URL is provided, use it.
@@ -63,14 +64,16 @@ async function streamGeminiDirect({
   mode = 'chat',
   activeGem = null,
   attachedImage = null,
+  customSystemInstruction = null,
+  searchContext = null,
   signal,
   onToken
 }) {
-  let primaryModel = 'gemini-3.8-flash';
-  let fallbackModels = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.6-flash'];
+  let primaryModel = 'gemini-3.6-flash';
+  let fallbackModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
   if (modelSelection === 'advanced') {
     primaryModel = 'gemini-3.7-flash';
-    fallbackModels = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+    fallbackModels = ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
   } else if (modelSelection === 'fast' || modelSelection === 'lite') {
     primaryModel = 'gemini-3.5-flash-lite';
     fallbackModels = ['gemini-3.6-flash', 'gemini-flash-latest'];
@@ -78,7 +81,7 @@ async function streamGeminiDirect({
 
   const modelsToTry = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
 
-  let baseIntelligence = "You are Gabby, a state-of-the-art AI assistant with top-tier intelligence, clarity, and depth—equivalent to ChatGPT Plus. You are extraordinarily knowledgeable, insightful, articulate, and thoughtful. You adapt seamlessly to any domain: deep coding, complex reasoning, creative writing, science, mathematics, analysis, and everyday chat. Be direct, thorough, and smart, avoiding unnecessary fluff while providing high-value, accurate insights.";
+  let baseIntelligence = "You are Gabby, an advanced AI assistant with DeepSeek/ChatGPT-level depth, reasoning, and precision. Provide insightful, thorough, and highly articulate answers. Structure complex responses with clear numbered headings ('1. ...', '2. ...'), concise paragraphs, round bullet points with bold lead-ins, clean code blocks, and markdown tables where data is presented. Avoid filler.";
 
   if (activeGem === 'code') {
     baseIntelligence = "You are Code Expert, an elite senior software architect and programmer. Write modular, robust, clean code with detailed explanations, edge cases, and best practices.";
@@ -92,9 +95,10 @@ async function streamGeminiDirect({
     baseIntelligence = "You are Research Assistant, a rigorous researcher and analytical scientist. Deliver in-depth, fact-checked, structured analysis and synthesis.";
   }
 
-  const systemInstructionText = mode === 'voice'
-    ? `${baseIntelligence}\n\nSPOKEN VOICE DELIVERY RULES:\n1. Deliver your full, top-tier intelligent answer naturally in clear, flowing spoken English.\n2. Do not output markdown symbols (no asterisks, hashtags, bullet points, or code blocks) since your output is spoken aloud.\n3. Speak warmly and engagingly.`
-    : baseIntelligence;
+  let systemInstructionText = customSystemInstruction || baseIntelligence;
+  if (mode === 'voice') {
+    systemInstructionText = `${baseIntelligence}\n\nSPOKEN VOICE DELIVERY RULES:\n1. Deliver your full, top-tier intelligent answer naturally in clear, flowing spoken English.\n2. Do not output markdown symbols (no asterisks, hashtags, bullet points, or code blocks) since your output is spoken aloud.\n3. Speak warmly and engagingly.`;
+  }
 
   const contents = [];
   const recent = conversationHistory.slice(-10);
@@ -116,7 +120,13 @@ async function streamGeminiDirect({
       }
     });
   }
-  userParts.push({ text: prompt || (attachedImage ? 'Please analyze this image.' : 'Hello') });
+
+  let finalUserPrompt = prompt || (attachedImage ? 'Please analyze this image.' : 'Hello');
+  if (searchContext) {
+    finalUserPrompt = `${searchContext}\n\n[USER QUERY]:\n${finalUserPrompt}`;
+  }
+
+  userParts.push({ text: finalUserPrompt });
 
   contents.push({
     role: 'user',
@@ -182,6 +192,135 @@ async function streamGeminiDirect({
   throw lastError || new Error('Google Gemini streaming is temporarily unavailable.');
 }
 
+function TableBlock({ children }) {
+  const [isCopied, setIsCopied] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const tableRef = useRef(null);
+
+  const extractTableCsv = () => {
+    if (!tableRef.current) return '';
+    const rows = Array.from(tableRef.current.querySelectorAll('tr'));
+    return rows
+      .map((r) => {
+        const cells = Array.from(r.querySelectorAll('th, td'));
+        return cells.map((c) => `"${c.innerText.replace(/"/g, '""').trim()}"`).join(',');
+      })
+      .join('\n');
+  };
+
+  const handleCopy = async () => {
+    try {
+      const csv = extractTableCsv();
+      await navigator.clipboard.writeText(csv);
+      setIsCopied(true);
+      toast.success('Table copied as CSV!');
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (e) {
+      toast.error('Failed to copy table');
+    }
+  };
+
+  const handleDownload = () => {
+    try {
+      const csv = extractTableCsv();
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `table-${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Table downloaded as CSV!');
+    } catch (e) {
+      toast.error('Failed to download table');
+    }
+  };
+
+  return (
+    <>
+      <div className="relative my-4 rounded-xl overflow-hidden bg-[#1c1c1e] border border-white/10 shadow-lg text-left">
+        {/* Table Card Header */}
+        <div className="flex items-center justify-between px-3.5 py-2 bg-[#131314]/80 border-b border-white/10">
+          <span className="text-xs font-mono font-medium text-[#8a8a8e] tracking-wider uppercase">
+            Table
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleCopy}
+              className="px-2 py-1 rounded-md text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1 cursor-pointer"
+              title="Copy table as CSV"
+            >
+              {isCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+              <span className="text-[11px]">{isCopied ? 'Copied' : 'Copy'}</span>
+            </button>
+            <button
+              onClick={handleDownload}
+              className="px-2 py-1 rounded-md text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1 cursor-pointer"
+              title="Download CSV"
+            >
+              <Download size={12} />
+              <span className="text-[11px] hidden sm:inline">CSV</span>
+            </button>
+            <button
+              onClick={() => setIsExpanded(true)}
+              className="p-1 rounded-md text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              title="Expand table"
+            >
+              <Maximize2 size={13} />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable Table Content */}
+        <div className="overflow-x-auto custom-scrollbar p-1" ref={tableRef}>
+          <table className="w-full border-collapse text-xs sm:text-sm text-[#e8e8e8]">
+            {children}
+          </table>
+        </div>
+      </div>
+
+      {/* Expanded Table Modal */}
+      {isExpanded && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md"
+          onClick={() => setIsExpanded(false)}
+        >
+          <div
+            className="w-full max-w-4xl max-h-[85vh] bg-[#1c1c1e] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#131314]">
+              <span className="text-sm font-semibold text-white">Expanded Table View</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDownload}
+                  className="px-2.5 py-1 rounded-lg text-xs bg-white/10 hover:bg-white/15 text-white flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download size={13} />
+                  <span>Download CSV</span>
+                </button>
+                <button
+                  onClick={() => setIsExpanded(false)}
+                  className="p-1 hover:bg-white/10 rounded-lg text-[#8a8a8e] hover:text-white transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto p-4 flex-1 custom-scrollbar">
+              <table className="w-full border-collapse text-sm text-[#e8e8e8]">
+                {children}
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function CodeBlock({ className, children, ...props }) {
   const [isCopied, setIsCopied] = useState(false);
   const match = /language-(\w+)/.exec(className || '');
@@ -191,26 +330,22 @@ function CodeBlock({ className, children, ...props }) {
     try {
       await navigator.clipboard.writeText(codeText);
       setIsCopied(true);
-      toast.success('Code copied!', {
-        id: 'code-copied-toast',
-        style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
-      });
+      toast.success('Code copied!');
       setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
-      console.error('Copy code failed', err);
       toast.error('Failed to copy code');
     }
   };
 
   return (
-    <div className="relative my-4 rounded-2xl overflow-hidden bg-[#1e1f20] border border-white/10 group/code shadow-lg text-left">
-      <div className="flex items-center justify-between px-4 py-2 bg-[#131314]/70 border-b border-white/5">
-        <span className="text-xs font-mono text-[#70CFFF] font-medium tracking-wide">
+    <div className="relative my-4 rounded-xl overflow-hidden bg-[#1c1c1e] border border-white/10 group/code shadow-lg text-left">
+      <div className="flex items-center justify-between px-3.5 py-2 bg-[#131314]/80 border-b border-white/10">
+        <span className="text-xs font-mono text-[#8a8a8e] font-medium tracking-wide uppercase">
           {match ? match[1] : 'code'}
         </span>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-[#c4c7c5] hover:text-white hover:bg-white/10 transition-colors"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
           title="Copy code"
         >
           {isCopied ? (
@@ -221,12 +356,12 @@ function CodeBlock({ className, children, ...props }) {
           ) : (
             <>
               <Copy size={13} />
-              <span>Copy code</span>
+              <span>Copy</span>
             </>
           )}
         </button>
       </div>
-      <pre className="p-2.5 sm:p-4 overflow-x-auto text-[11.5px] sm:text-[13.5px] leading-normal sm:leading-relaxed font-mono">
+      <pre className="p-3 sm:p-4 overflow-x-auto text-[13px] sm:text-sm leading-relaxed font-mono text-[#e8e8e8] custom-scrollbar whitespace-pre">
         <code className={className} {...props}>
           {children}
         </code>
@@ -297,6 +432,63 @@ function App() {
   const [isAttachmentOpen, setIsAttachmentOpen] = useState(false);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState('standard');
+
+  // DeepSeek-Style Think (Reasoning) & Search (Web Grounding) State
+  const [isThinkEnabled, setIsThinkEnabled] = useState(() => {
+    return localStorage.getItem('gabby_think_enabled') === 'true';
+  });
+  const [isSearchEnabled, setIsSearchEnabled] = useState(() => {
+    return localStorage.getItem('gabby_search_enabled') === 'true';
+  });
+  const [isSearchingWeb, setIsSearchingWeb] = useState(false);
+  const [isThinkingLive, setIsThinkingLive] = useState(false);
+  const [thinkingSeconds, setThinkingSeconds] = useState(0);
+  const [expandedThoughts, setExpandedThoughts] = useState(new Set());
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const chatContainerRef = useRef(null);
+
+  const toggleThink = () => {
+    setIsThinkEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem('gabby_think_enabled', String(next));
+      toast(next ? 'Reasoning mode (Think) ON' : 'Reasoning mode (Think) OFF', {
+        icon: '🧠',
+        id: 'toggle-think'
+      });
+      return next;
+    });
+  };
+
+  const toggleSearch = () => {
+    setIsSearchEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem('gabby_search_enabled', String(next));
+      toast(next ? 'Web Search grounding ON' : 'Web Search grounding OFF', {
+        icon: '🌐',
+        id: 'toggle-search'
+      });
+      return next;
+    });
+  };
+
+  const toggleThoughtExpanded = (msgIndex) => {
+    setExpandedThoughts((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgIndex)) next.delete(msgIndex);
+      else next.add(msgIndex);
+      return next;
+    });
+  };
+
+  const handleChatScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    const isUp = scrollHeight - scrollTop - clientHeight > 160;
+    setShowScrollBottom(isUp);
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   // Active Gem Persona & Multimodal Attachment
   const [activeGem, setActiveGem] = useState(null);
@@ -819,26 +1011,51 @@ function App() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
-
-    try {
-      let response = null;
-      if (!currentImg) {
-        try {
-          response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message, chat_id: chatIdToUse, model: selectedModel }),
-            signal: controller.signal
-          });
-        } catch (err) {
-          console.warn('Backend stream request failed, falling back to direct Gemini streaming:', err);
+    // 1. Search Grounding Pass (when Search toggle is active)
+    let searchResults = [];
+    let searchContextStr = null;
+    if (isSearchEnabled) {
+      setIsSearchingWeb(true);
+      try {
+        searchResults = await performWebSearch(message);
+        if (searchResults && searchResults.length > 0) {
+          searchContextStr = `[VERIFIED REAL-TIME WEB SEARCH RESULTS FOR GROUNDING]:\n` +
+            searchResults.map((r, i) => `[Source ${i + 1}]: ${r.title}\nURL: ${r.url}\nSnippet: ${r.snippet}`).join('\n\n') +
+            `\nPlease ground your response in these verified search results where relevant and cite sources accurately.`;
         }
+      } catch (err) {
+        console.warn('Web search grounding error:', err);
+      } finally {
+        setIsSearchingWeb(false);
       }
+    }
 
-      if (currentImg || !response || !response.ok) {
-        // Fallback directly to client-side Gemini streaming (or multimodal if image attached)
-        let streamed = '';
+    // 2. Think Reasoning Pass (when Think toggle is active)
+    let accumulatedReasoning = '';
+    let thoughtElapsed = null;
+
+    if (isThinkEnabled) {
+      setIsThinkingLive(true);
+      setThinkingSeconds(0);
+      const thinkStart = Date.now();
+      const thinkInterval = setInterval(() => {
+        setThinkingSeconds(Math.floor((Date.now() - thinkStart) / 1000));
+      }, 200);
+
+      // Append assistant message in thinking mode
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: '',
+          reasoning: '',
+          isThinking: true,
+          thoughtTime: null,
+          searchSources: searchResults
+        }
+      ]);
+
+      try {
         await streamGeminiDirect({
           prompt: message,
           conversationHistory: messages,
@@ -846,96 +1063,90 @@ function App() {
           mode: 'chat',
           activeGem,
           attachedImage: currentImg,
+          searchContext: searchContextStr,
+          customSystemInstruction:
+            "You are an analytical deep reasoning engine. Think through this step by step. Evaluate constraints, evaluate alternatives, detect edge cases, and structure the logic. Output ONLY your internal chain-of-thought. Do not output the final polished response yet.",
           signal: controller.signal,
           onToken: (token) => {
-            streamed += token;
+            accumulatedReasoning += token;
             setMessages((prev) => {
               const updated = [...prev];
               if (updated.length > 0) {
                 const lastIdx = updated.length - 1;
                 updated[lastIdx] = {
                   ...updated[lastIdx],
-                  content: (updated[lastIdx].content || '') + token
+                  reasoning: (updated[lastIdx].reasoning || '') + token
                 };
               }
               return updated;
             });
           }
         });
-        setMessages((latest) => {
-          saveChatLocally(chatIdToUse, latest);
-          return latest;
-        });
-        return;
-      }
+      } catch (err) {
+        if (err.name === 'AbortError') throw err;
+        console.warn('Reasoning pass notice:', err.message);
+      } finally {
+        clearInterval(thinkInterval);
+        thoughtElapsed = Math.max(1, Math.floor((Date.now() - thinkStart) / 1000));
+        setThinkingSeconds(thoughtElapsed);
+        setIsThinkingLive(false);
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let streamed = '';
-      let sseBuffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        sseBuffer += decoder.decode(value, { stream: true });
-        const lines = sseBuffer.split('\n');
-        sseBuffer = lines.pop(); // Keep partial line across chunks
-
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (trimmedLine.startsWith('data: ')) {
-            const data = trimmedLine.slice(6).trim();
-            if (data === '[DONE]') {
-              setIsStreaming(false);
-              setIsLoading(false);
-              abortControllerRef.current = null;
-              fetchChats();
-              setMessages((latest) => {
-                saveChatLocally(chatIdToUse, latest);
-                return latest;
-              });
-              return;
-            }
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.text) {
-                const newToken = parsed.text;
-                streamed += newToken;
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  if (updated.length > 0) {
-                    const lastIdx = updated.length - 1;
-                    updated[lastIdx] = {
-                      ...updated[lastIdx],
-                      content: updated[lastIdx].content + newToken
-                    };
-                  }
-                  return updated;
-                });
-              } else if (parsed.info) {
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  if (updated.length > 0) {
-                    const lastIdx = updated.length - 1;
-                    updated[lastIdx] = {
-                      ...updated[lastIdx],
-                      content: updated[lastIdx].content + `\n\n*${parsed.info}*`
-                    };
-                  }
-                  return updated;
-                });
-              } else if (parsed.error) {
-                throw new Error(parsed.error);
-              }
-            } catch (e) {
-              if (e.message && !e.message.includes('JSON')) {
-                throw e;
-              }
-            }
+        setMessages((prev) => {
+          const updated = [...prev];
+          if (updated.length > 0) {
+            const lastIdx = updated.length - 1;
+            updated[lastIdx] = {
+              ...updated[lastIdx],
+              isThinking: false,
+              thoughtTime: thoughtElapsed
+            };
           }
-        }
+          return updated;
+        });
       }
+    } else {
+      // Direct stream without thinking pass
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: '',
+          searchSources: searchResults
+        }
+      ]);
+    }
+
+    // 3. Final Answer Streaming Pass
+    try {
+      let finalStreamed = '';
+      const answerPrompt = accumulatedReasoning
+        ? `[INTERNAL REASONING CHAIN]:\n${accumulatedReasoning}\n\n[USER QUERY]:\n${message}\n\n[TASK]:\nProvide the comprehensive, structured, and polished final answer to the user.`
+        : message;
+
+      await streamGeminiDirect({
+        prompt: answerPrompt,
+        conversationHistory: messages,
+        modelSelection: selectedModel,
+        mode: 'chat',
+        activeGem,
+        attachedImage: currentImg,
+        searchContext: searchContextStr,
+        signal: controller.signal,
+        onToken: (token) => {
+          finalStreamed += token;
+          setMessages((prev) => {
+            const updated = [...prev];
+            if (updated.length > 0) {
+              const lastIdx = updated.length - 1;
+              updated[lastIdx] = {
+                ...updated[lastIdx],
+                content: (updated[lastIdx].content || '') + token
+              };
+            }
+            return updated;
+          });
+        }
+      });
 
       setMessages((latest) => {
         saveChatLocally(chatIdToUse, latest);
@@ -1628,98 +1839,73 @@ function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full relative min-w-0 bg-[#131314]">
         {/* Header */}
-        <header className="h-12 sm:h-14 flex items-center px-2.5 sm:px-4 justify-between bg-[#131314] border-b border-white/5 z-10 shrink-0">
-          <div className="flex items-center gap-1.5 sm:gap-3">
-            {(!isSidebarOpen || isMobile) && (
-              <button
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="p-1.5 sm:p-2 hover:bg-[#1e1f20] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer"
-                title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
-              >
-                <Menu size={18} className="sm:w-5 sm:h-5" />
-              </button>
-            )}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <GeminiSparkle className="w-4 h-4 sm:w-6 sm:h-6" />
-              <span className="text-base sm:text-xl font-medium tracking-tight text-[#e3e3e3]">
-                Gabby
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
-                className="text-[10px] sm:text-[11px] text-[#8e918f] hover:text-[#e3e3e3] bg-[#1e1f20] hover:bg-[#282a2c] px-2 sm:px-2.5 py-0.5 rounded-full border border-white/5 ml-0.5 sm:ml-1 font-mono flex items-center gap-0.5 sm:gap-1 transition-colors cursor-pointer"
-                title="Select Gemini Model"
-              >
-                <span>
-                  {selectedModel === 'fast'
-                    ? '3.5 Lite'
-                    : selectedModel === 'advanced'
-                    ? '3.7 Flash'
-                    : '3.8 Flash'}
-                </span>
-                <ChevronDown size={10} className="sm:w-[11px] sm:h-[11px]" />
-              </button>
-
-              {/* Gemini Voice Selector Button */}
-              <button
-                type="button"
-                onClick={() => setIsVoiceSelectorOpen(!isVoiceSelectorOpen)}
-                className="text-[10px] sm:text-[11px] text-[#70CFFF] hover:text-white bg-[#1e1f20] hover:bg-[#282a2c] px-2 sm:px-2.5 py-0.5 rounded-full border border-[#70CFFF]/30 hover:border-[#70CFFF]/60 ml-0.5 font-mono flex items-center gap-1 transition-colors cursor-pointer"
-                title="Select Gemini Neural Voice"
-              >
-                <Volume2 size={11} className="text-[#70CFFF]" />
-                <span className="hidden xs:inline">{selectedGeminiVoice}</span>
-                <ChevronDown size={10} className="sm:w-[11px] sm:h-[11px]" />
-              </button>
-
-              {/* Active Gem Indicator */}
-              {activeGem && (
-                <div className="hidden md:flex items-center gap-1 text-[10px] text-purple-300 bg-purple-900/30 border border-purple-500/30 px-2 py-0.5 rounded-full">
-                  <span>Gem: {activeGem}</span>
-                  <button
-                    onClick={() => setActiveGem(null)}
-                    className="hover:text-white ml-0.5 cursor-pointer"
-                    title="Reset to default Gemini"
-                  >
-                    <X size={10} />
-                  </button>
-                </div>
-              )}
-            </div>
+        <header className="h-12 sm:h-14 flex items-center px-3 sm:px-4 justify-between bg-[#131314] border-b border-white/[0.08] z-10 shrink-0">
+          {/* Left: hamburger icon -> opens slide-out panel with chat history */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 hover:bg-[#1e1f20] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer"
+              title="Chat history"
+            >
+              <Menu size={20} />
+            </button>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-3">
-            {/* Install Gabby PWA App Button */}
-            {!isAppInstalled && (
-              <button
-                type="button"
-                onClick={handleInstallApp}
-                className="p-1.5 sm:px-3 sm:py-1.5 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] border border-[#70CFFF]/40 hover:border-[#70CFFF]/70 text-[#70CFFF] hover:text-white text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 transition-all shadow-sm group cursor-pointer"
-                title="Install Gabby as a standalone App"
-              >
-                <Download size={13} className="text-[#70CFFF] group-hover:scale-110 transition-transform sm:w-3.5 sm:h-3.5" />
-                <span className="hidden sm:inline">Install App</span>
-              </button>
-            )}
 
+          {/* Center: current chat's title (truncate with ellipsis if long) + Gemini Star icon */}
+          <div className="flex items-center gap-2 max-w-[50%] sm:max-w-[60%] justify-center min-w-0">
+            <GeminiSparkle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+            <span className="text-sm sm:text-base font-medium text-[#e8e8e8] truncate">
+              {chats.find((c) => c.id === currentChatId)?.title || (messages.length > 0 ? (messages[0].content?.slice(0, 32) || 'Chat') : 'Gabby AI')}
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
+              className="hidden md:inline-flex text-[10px] text-[#8a8a8e] hover:text-[#e8e8e8] bg-[#1e1f20] hover:bg-[#282a2c] px-2 py-0.5 rounded-full border border-white/5 font-mono items-center gap-0.5 transition-colors cursor-pointer shrink-0"
+              title="Select Gemini Model"
+            >
+              <span>
+                {selectedModel === 'fast'
+                  ? '3.5 Lite'
+                  : selectedModel === 'advanced'
+                  ? '3.7 Flash'
+                  : '3.8 Flash'}
+              </span>
+              <ChevronDown size={10} />
+            </button>
+          </div>
+
+          {/* Right: circular outlined "+" button -> starts a new chat, plus Voice mode */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Live Voice Mode Button */}
             <button
               type="button"
               onClick={() => setIsVoiceModeOpen(true)}
-              className="px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-[#4E80EE]/15 via-[#9B72CF]/15 to-[#E275AA]/15 hover:from-[#4E80EE]/25 hover:via-[#9B72CF]/25 hover:to-[#E275AA]/25 border border-[#4E80EE]/30 hover:border-[#9B72CF]/50 text-[#e3e3e3] text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 transition-all shadow-sm group cursor-pointer"
+              className="p-1.5 sm:px-3 sm:py-1.5 rounded-full text-[#c4c7c5] hover:text-white hover:bg-white/5 border border-white/10 transition-all flex items-center gap-1.5 cursor-pointer"
               title="Start Live Voice Conversation"
             >
-              <Mic size={13} className="text-[#70CFFF] group-hover:scale-110 transition-transform sm:w-3.5 sm:h-3.5" />
-              <span className="hidden xs:inline">Voice Mode</span>
-              <span className="xs:hidden">Voice</span>
+              <Mic size={15} className="text-[#70CFFF]" />
+              <span className="text-xs font-medium hidden sm:inline">Voice</span>
             </button>
-            <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-[#4E80EE] via-[#9B72CF] to-[#E275AA] flex items-center justify-center text-[11px] sm:text-sm font-semibold text-white shadow-md">
-              G
-            </div>
+
+            {/* Circular outlined "+" button for new chat */}
+            <button
+              type="button"
+              onClick={createNewChat}
+              className="w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full border border-white/20 hover:border-white/60 text-[#e8e8e8] hover:text-white hover:bg-white/5 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+              title="Start new chat"
+            >
+              <Plus size={18} />
+            </button>
           </div>
         </header>
 
         {/* Chat Area */}
-        <div className="flex-1 overflow-y-auto scroll-smooth relative">
+        <div
+          ref={chatContainerRef}
+          onScroll={handleChatScroll}
+          className="flex-1 overflow-y-auto scroll-smooth relative custom-scrollbar"
+        >
           {messages.length === 0 ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-3 sm:p-6 overflow-y-auto custom-scrollbar">
               <div className="max-w-4xl w-full flex flex-col items-start space-y-3 sm:space-y-6 md:space-y-8 animate-fade-in my-auto pb-20 sm:pb-28">
@@ -1860,13 +2046,95 @@ function App() {
                       )
                     ) : (
                       /* Assistant Message */
-                      <div className="text-left space-y-2">
-                        <div className="prose-chat text-[#e3e3e3] leading-relaxed">
+                      <div className="text-left space-y-2.5">
+                        {/* Live Searching Web status indicator */}
+                        {isSearchingWeb && index === messages.length - 1 && (
+                          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1c1c1e] border border-white/10 text-xs text-[#8a8a8e] animate-pulse">
+                            <Globe size={13} className="text-[#70CFFF] animate-spin" />
+                            <span>Searching the web...</span>
+                          </div>
+                        )}
+
+                        {/* Search Grounding Sources (if available) */}
+                        {msg.searchSources && msg.searchSources.length > 0 && (
+                          <div className="mb-2.5 space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-xs text-[#8a8a8e]">
+                              <Globe size={13} className="text-[#70CFFF]" />
+                              <span className="font-medium">Sources ({msg.searchSources.length})</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {msg.searchSources.map((source, sIdx) => (
+                                <a
+                                  key={sIdx}
+                                  href={source.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/10 text-xs text-[#8a8a8e] hover:text-white transition-colors max-w-xs truncate"
+                                  title={source.snippet || source.title}
+                                >
+                                  <span className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-mono shrink-0">
+                                    {sIdx + 1}
+                                  </span>
+                                  <span className="truncate">{source.title || source.url}</span>
+                                  <ExternalLink size={10} className="shrink-0 opacity-60" />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Live Thinking Block (while reasoning pass is running) */}
+                        {msg.isThinking && (
+                          <div className="mb-2.5 rounded-xl bg-[#1c1c1e]/60 border border-white/10 p-3 text-xs">
+                            <div className="flex items-center gap-2 font-medium text-[#c4c7c5] mb-2">
+                              <Brain size={14} className="text-[#9B72CF] animate-pulse" />
+                              <span>Thinking... {thinkingSeconds}s</span>
+                            </div>
+                            {msg.reasoning && (
+                              <div className="border-l-2 border-white/20 pl-3 py-1 font-mono text-[12px] sm:text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#8a8a8e]">
+                                {msg.reasoning}
+                                <span className="inline-block w-1.5 h-3.5 ml-1 bg-[#9B72CF] animate-pulse align-middle" />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Collapsed Thought Block (after reasoning pass is complete) */}
+                        {!msg.isThinking && msg.reasoning && (
+                          <div className="mb-2.5 rounded-xl bg-[#1c1c1e]/40 border border-white/10 overflow-hidden text-xs">
+                            <button
+                              type="button"
+                              onClick={() => toggleThoughtExpanded(index)}
+                              className="w-full flex items-center justify-between px-3 py-2 text-[#8a8a8e] hover:text-[#e8e8e8] hover:bg-white/[0.03] transition-colors cursor-pointer text-left"
+                            >
+                              <div className="flex items-center gap-2 font-medium">
+                                <Brain size={14} className="text-[#9B72CF]" />
+                                <span>Thought for {msg.thoughtTime || 4} seconds</span>
+                              </div>
+                              {expandedThoughts.has(index) ? (
+                                <ChevronDown size={14} />
+                              ) : (
+                                <ChevronRight size={14} />
+                              )}
+                            </button>
+                            {expandedThoughts.has(index) && (
+                              <div className="px-3 pb-3 pt-1 border-t border-white/5">
+                                <div className="border-l-2 border-white/20 pl-3 py-1 font-mono text-[12px] sm:text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#8a8a8e]">
+                                  {msg.reasoning}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Final Answer Prose Content */}
+                        <div className="prose-chat text-[#e8e8e8] leading-relaxed">
                           {msg.content ? (
                             <>
                               <ReactMarkdown
                                 remarkPlugins={[remarkGfm]}
                                 components={{
+                                  table: ({ children }) => <TableBlock>{children}</TableBlock>,
                                   pre: ({ children }) => <>{children}</>,
                                   code({ node, inline, className, children, ...props }) {
                                     return !inline ? (
@@ -1874,7 +2142,7 @@ function App() {
                                         {children}
                                       </CodeBlock>
                                     ) : (
-                                      <code className="bg-[#282a2c] px-1.5 py-0.5 rounded-md text-sm font-mono text-[#70CFFF]" {...props}>
+                                      <code className="bg-[#282a2c] px-1.5 py-0.5 rounded-md text-xs sm:text-sm font-mono text-[#70CFFF]" {...props}>
                                         {children}
                                       </code>
                                     );
@@ -1883,13 +2151,13 @@ function App() {
                               >
                                 {msg.content}
                               </ReactMarkdown>
-                              {isStreaming && index === messages.length - 1 && (
+                              {isStreaming && index === messages.length - 1 && !msg.isThinking && (
                                 <span className="streaming-cursor" title="Streaming..." />
                               )}
                             </>
                           ) : (
-                            /* Gemini Signature Response Shimmer Animation */
-                            <GeminiThinkingAnimation />
+                            /* Shimmer Animation only when not thinking */
+                            !msg.isThinking && <GeminiThinkingAnimation />
                           )}
                         </div>
 
@@ -1905,9 +2173,67 @@ function App() {
           )}
         </div>
 
-        {/* Input Area (Gemini Floating Pill) */}
-        <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#131314] via-[#131314]/95 to-transparent px-2.5 sm:px-4 pt-4 sm:pt-8 pb-3 sm:pb-5 pointer-events-none">
+        {/* Input Area (DeepSeek Floating Bar) */}
+        <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#131314] via-[#131314]/95 to-transparent px-2.5 sm:px-4 pt-3 pb-[max(env(safe-area-inset-bottom),14px)] pointer-events-none">
           <div className="max-w-3xl mx-auto w-full relative pointer-events-auto">
+            {/* Floating circular down-chevron button to jump to bottom when scrolled up */}
+            {showScrollBottom && (
+              <button
+                type="button"
+                onClick={scrollToBottom}
+                className="absolute -top-12 right-2 sm:right-4 w-9 h-9 rounded-full bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/15 text-[#e8e8e8] hover:text-white shadow-xl flex items-center justify-center transition-all animate-bounce cursor-pointer z-20"
+                title="Jump to bottom"
+              >
+                <ChevronDown size={18} />
+              </button>
+            )}
+
+            {/* Think & Search Toggles Bar */}
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <button
+                type="button"
+                onClick={toggleThink}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border ${
+                  isThinkEnabled
+                    ? 'bg-[#9B72CF]/20 text-[#D8B4FE] border-[#9B72CF]/60 shadow-[0_0_12px_rgba(155,114,207,0.25)]'
+                    : 'bg-[#1c1c1e] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-[#282a2c]'
+                }`}
+                title="Toggle Reasoning Pass (Think)"
+              >
+                <Brain size={13} className={isThinkEnabled ? 'text-[#D8B4FE]' : 'text-[#8a8a8e]'} />
+                <span>Think</span>
+                {isThinkEnabled && <span className="w-1.5 h-1.5 rounded-full bg-[#D8B4FE] animate-pulse" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleSearch}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border ${
+                  isSearchEnabled
+                    ? 'bg-[#4E80EE]/20 text-[#70CFFF] border-[#4E80EE]/60 shadow-[0_0_12px_rgba(78,128,238,0.25)]'
+                    : 'bg-[#1c1c1e] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-[#282a2c]'
+                }`}
+                title="Toggle Web Search Grounding"
+              >
+                <Globe size={13} className={isSearchEnabled ? 'text-[#70CFFF]' : 'text-[#8a8a8e]'} />
+                <span>Search</span>
+                {isSearchEnabled && <span className="w-1.5 h-1.5 rounded-full bg-[#70CFFF] animate-pulse" />}
+              </button>
+
+              {isSearchingWeb && (
+                <span className="text-[11px] text-[#70CFFF] flex items-center gap-1 animate-pulse ml-1">
+                  <Globe size={11} className="animate-spin" />
+                  Searching web...
+                </span>
+              )}
+              {isThinkingLive && (
+                <span className="text-[11px] text-[#D8B4FE] flex items-center gap-1 animate-pulse ml-1">
+                  <Brain size={11} />
+                  Thinking ({thinkingSeconds}s)...
+                </span>
+              )}
+            </div>
+
             {/* Hidden file & image inputs */}
             <input
               type="file"
@@ -1924,7 +2250,7 @@ function App() {
               className="hidden"
             />
 
-            <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[24px] sm:rounded-[28px] border border-[#282a2c] focus-within:border-white/20 transition-all shadow-2xl overflow-hidden">
+            <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[24px] sm:rounded-[28px] border border-white/10 focus-within:border-white/25 transition-all shadow-2xl overflow-hidden">
               {attachedImage && (
                 <div className="px-3 sm:px-4 pt-2.5 pb-1 flex items-center gap-2.5 border-b border-white/5 bg-white/[0.02]">
                   <div className="relative group shrink-0">
@@ -1949,22 +2275,22 @@ function App() {
                 </div>
               )}
 
-              <div className="flex items-end gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5">
-                {/* Plus button for attachments */}
+              <div className="flex items-end gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5">
+                {/* Circular Plus button for attachments */}
                 <button
                   type="button"
                   onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
-                  className="p-1.5 sm:p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors mb-0.5 shrink-0 cursor-pointer"
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white/5 hover:bg-white/10 text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center mb-0.5 shrink-0 cursor-pointer border border-white/5"
                   title="Add attachment"
                 >
-                  <Plus size={19} className="sm:w-5 sm:h-5" />
+                  <Plus size={18} />
                 </button>
 
                 {/* Auto-expanding Input textarea */}
                 <textarea
                   rows={1}
-                  placeholder="Ask Gabby..."
-                  className="flex-1 bg-transparent text-[#e3e3e3] focus:outline-none placeholder-[#8e918f] text-[13px] sm:text-sm py-1.5 sm:py-2 resize-none max-h-36 custom-scrollbar min-w-0 leading-normal"
+                  placeholder="Type a message or hold to speak"
+                  className="flex-1 bg-transparent text-[#e8e8e8] focus:outline-none placeholder-[#8a8a8e] text-[13.5px] sm:text-base py-1.5 sm:py-2 resize-none max-h-36 custom-scrollbar min-w-0 leading-normal"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -1977,65 +2303,46 @@ function App() {
                 />
 
                 {/* Right side buttons */}
-                <div className="flex items-center gap-1 sm:gap-1.5 mb-0.5 shrink-0">
-                  {/* Model selector (visible on tablets/desktop, on mobile it's in the header) */}
-                  <div className="relative hidden sm:block">
-                    <button
-                      type="button"
-                      onClick={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
-                      className="px-2.5 py-1.5 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors flex items-center gap-1 text-xs font-medium bg-[#131314]/60 border border-white/5 cursor-pointer"
-                      title="Select model"
-                    >
-                      <span className="text-[11px] font-medium">
-                        {selectedModel === 'fast'
-                          ? 'Gemini 3.5 Flash Lite'
-                          : selectedModel === 'advanced'
-                          ? 'Gemini 3.7 Flash'
-                          : 'Gemini 3.8 Flash'}
-                      </span>
-                      <ChevronDown size={13} />
-                    </button>
-                  </div>
-
-                  {/* Live Voice Button */}
+                <div className="flex items-center gap-1.5 mb-0.5 shrink-0">
+                  {/* Circular Voice Button */}
                   <button
                     type="button"
                     onClick={() => setIsVoiceModeOpen(true)}
-                    className="p-1.5 sm:p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center cursor-pointer"
+                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white/5 hover:bg-white/10 text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center cursor-pointer border border-white/5"
                     title="Start Live Voice Conversation"
                   >
-                    <Mic size={18} />
+                    <Mic size={17} />
                   </button>
 
-                  {/* Send or Stop button */}
+                  {/* Circular Send or Stop button */}
                   {isStreaming ? (
                     <button
                       type="button"
                       onClick={stopGeneration}
-                      className="p-1.5 sm:p-2 bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all shadow-md flex items-center justify-center cursor-pointer"
+                      className="w-8 h-8 sm:w-9 sm:h-9 bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all shadow-md flex items-center justify-center cursor-pointer"
                       title="Stop generation"
                     >
-                      <Square size={14} className="fill-current" />
+                      <Square size={13} className="fill-current" />
                     </button>
                   ) : (
                     <button
                       type="submit"
                       disabled={(!input.trim() && !attachedImage) || isLoading}
-                      className={`p-1.5 sm:p-2 rounded-full transition-all flex items-center justify-center cursor-pointer ${
+                      className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full transition-all flex items-center justify-center cursor-pointer ${
                         (input.trim() || attachedImage) && !isLoading
                           ? 'bg-white text-[#131314] hover:bg-gray-200 shadow-md scale-100 hover:scale-105 active:scale-95'
-                          : 'bg-white/5 text-[#8e918f] cursor-not-allowed'
+                          : 'bg-white/5 text-[#8a8a8e] cursor-not-allowed'
                       }`}
                       title="Send message"
                     >
-                      <Send size={16} />
+                      <Send size={15} />
                     </button>
                   )}
                 </div>
               </div>
             </form>
             <div className="text-center mt-1.5 sm:mt-2 flex items-center justify-center px-2">
-              <p className="text-[10px] sm:text-[11px] text-[#8e918f] truncate">Gabby may display inaccurate info, including about people, so double-check its responses.</p>
+              <p className="text-[10px] sm:text-[11px] text-[#8a8a8e] truncate">Gabby may display inaccurate info, including about people, so double-check its responses.</p>
             </div>
           </div>
         </div>

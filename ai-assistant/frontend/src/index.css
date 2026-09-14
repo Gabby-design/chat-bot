@@ -714,146 +714,106 @@ body {
 .sound-wave-bar:nth-child(2) { animation-delay: 0.2s; }
 .sound-wave-bar:nth-child(3) { animation-delay: 0.4s; }
 
-/* Prose & Typography Refinement */
+/* DeepSeek Mobile Prose & Typography Refinement */
 .prose-chat {
-  font-size: 0.95rem;
-  line-height: 1.7;
-  color: #e2e8f0;
+  font-size: 0.9375rem; /* 15px mobile, 16px desktop */
+  line-height: 1.6;
+  color: #e8e8e8;
+  word-break: break-word;
 }
 
-.prose-chat h1, .prose-chat h2, .prose-chat h3, .prose-chat h4 {
-  color: #ffffff;
-  font-weight: 600;
-  margin-top: 1.25rem;
-  margin-bottom: 0.5rem;
-  letter-spacing: -0.015em;
+@media (min-width: 640px) {
+  .prose-chat {
+    font-size: 1rem; /* 16px */
+  }
 }
-
-.prose-chat h1 { font-size: 1.4rem; }
-.prose-chat h2 { font-size: 1.25rem; }
-.prose-chat h3 { font-size: 1.1rem; }
 
 .prose-chat p {
   margin-bottom: 0.85rem;
-}
-.prose-chat p:last-child {
-  margin-bottom: 0;
+  line-height: 1.6;
 }
 
-.prose-chat ul, .prose-chat ol {
-  margin-top: 0.5rem;
-  margin-bottom: 0.85rem;
-  padding-left: 1.5rem;
+/* Numbered section headers ("2. Recommended Architecture") */
+.prose-chat h1, .prose-chat h2 {
+  font-size: 1.15rem; /* ~18-20px */
+  font-weight: 700;
+  color: #ffffff;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
 }
 
-.prose-chat ul { list-style-type: disc; }
-.prose-chat ol { list-style-type: decimal; }
+.prose-chat h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #f3f3f3;
+  margin-top: 1.25rem;
+  margin-bottom: 0.4rem;
+}
 
-.prose-chat li {
+.prose-chat h4, .prose-chat h5 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e8e8e8;
+  margin-top: 1rem;
   margin-bottom: 0.35rem;
 }
 
-.prose-chat blockquote {
-  border-left: 3px solid #38bdf8;
-  padding-left: 1rem;
-  margin: 1rem 0;
-  color: #94a3b8;
-  font-style: italic;
-  background: rgba(56, 189, 248, 0.05);
-  border-radius: 0 8px 8px 0;
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
+/* Thin horizontal rule between major sections */
+.prose-chat hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 1.5rem 0;
 }
 
-.prose-chat table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 1rem 0;
-  font-size: 0.875rem;
-  border-radius: 8px;
-  overflow: hidden;
+/* Bullets with round disc and bold lead-in support */
+.prose-chat ul {
+  list-style-type: disc;
+  padding-left: 1.35rem;
+  margin-top: 0.4rem;
+  margin-bottom: 0.85rem;
 }
 
-.prose-chat th, .prose-chat td {
-  padding: 0.65rem 0.9rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  text-align: left;
+.prose-chat ol {
+  list-style-type: decimal;
+  padding-left: 1.35rem;
+  margin-top: 0.4rem;
+  margin-bottom: 0.85rem;
 }
 
-.prose-chat th {
-  background: rgba(255, 255, 255, 0.06);
-  color: #f8fafc;
-  font-weight: 600;
+.prose-chat li {
+  margin-bottom: 0.4rem;
+  line-height: 1.6;
 }
 
-.prose-chat tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.02);
+.prose-chat li::marker {
+  color: #8a8a8e;
 }
 
-.prose-chat strong {
+.prose-chat strong, .prose-chat b {
   color: #ffffff;
   font-weight: 600;
 }
 
+/* DeepSeek Blockquote & Chain of thought text */
+.prose-chat blockquote {
+  border-left: 2px solid rgba(255, 255, 255, 0.2);
+  padding-left: 0.85rem;
+  margin: 0.85rem 0;
+  color: #8a8a8e;
+  font-size: 0.9rem;
+  background: transparent;
+  border-radius: 0;
+}
+
 .prose-chat a {
-  color: #38bdf8;
+  color: #70CFFF;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .prose-chat a:hover {
-  color: #7dd3fc;
-}
-
-/* Mobile-First Compact Typography (< 640px) */
-@media (max-width: 640px) {
-  .prose-chat {
-    font-size: 0.8125rem; /* 13px - sharp, compact, comfortable to read */
-    line-height: 1.5;
-  }
-  .prose-chat h1 {
-    font-size: 1.1rem;
-    margin-top: 0.75rem;
-    margin-bottom: 0.3rem;
-  }
-  .prose-chat h2 {
-    font-size: 1.0rem;
-    margin-top: 0.65rem;
-    margin-bottom: 0.25rem;
-  }
-  .prose-chat h3 {
-    font-size: 0.9rem;
-    margin-top: 0.55rem;
-    margin-bottom: 0.2rem;
-  }
-  .prose-chat h4 {
-    font-size: 0.85rem;
-    margin-top: 0.45rem;
-    margin-bottom: 0.15rem;
-  }
-  .prose-chat p {
-    margin-bottom: 0.5rem;
-  }
-  .prose-chat ul, .prose-chat ol {
-    margin-top: 0.25rem;
-    margin-bottom: 0.5rem;
-    padding-left: 1.1rem;
-  }
-  .prose-chat li {
-    margin-bottom: 0.2rem;
-    font-size: 0.8125rem;
-  }
-  .prose-chat blockquote {
-    margin: 0.5rem 0;
-    padding: 0.35rem 0.65rem;
-    font-size: 0.8rem;
-  }
-  .prose-chat table {
-    font-size: 0.72rem;
-    margin: 0.5rem 0;
-  }
-  .prose-chat th, .prose-chat td {
-    padding: 0.35rem 0.5rem;
-  }
+  color: #9B72CF;
 }
 
 /* Phone in landscape compact styling */

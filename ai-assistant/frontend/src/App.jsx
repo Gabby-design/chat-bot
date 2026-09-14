@@ -2020,7 +2020,7 @@ function App() {
                             </div>
                           )}
                           {msg.content && (
-                            <div className="inline-block text-[13px] sm:text-[14.5px] md:text-[15px] leading-snug sm:leading-relaxed bg-[#282a2c] text-[#e3e3e3] rounded-2xl sm:rounded-3xl rounded-tr-sm px-3.5 py-2 sm:px-5 sm:py-3 border border-white/5 shadow-sm">
+                            <div className="inline-block text-[11px] sm:text-[13.5px] md:text-[14.5px] leading-snug sm:leading-relaxed bg-[#282a2c] text-[#e3e3e3] rounded-2xl sm:rounded-3xl rounded-tr-sm px-3 py-1.5 sm:px-4 sm:py-2.5 border border-white/5 shadow-sm">
                               <p className="whitespace-pre-wrap text-left">{msg.content}</p>
                             </div>
                           )}
@@ -2028,7 +2028,7 @@ function App() {
                           <div className="opacity-0 group-hover/user:opacity-100 transition-opacity mt-1 flex items-center gap-1">
                             <button
                               onClick={() => handleStartEdit(index, msg.content)}
-                              className="flex items-center gap-1 text-[11px] sm:text-xs text-[#8e918f] hover:text-[#70CFFF] px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
+                              className="flex items-center gap-1 text-[10px] sm:text-xs text-[#8e918f] hover:text-[#70CFFF] px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
                               title="Edit message"
                             >
                               <Pencil size={11} className="sm:w-3 sm:h-3" />
@@ -2036,7 +2036,7 @@ function App() {
                             </button>
                             <button
                               onClick={() => copyToClipboard(msg.content, index)}
-                              className="text-[11px] sm:text-xs text-[#8e918f] hover:text-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
+                              className="text-[10px] sm:text-xs text-[#8e918f] hover:text-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
                               title="Copy text"
                             >
                               <Copy size={11} className="sm:w-3 sm:h-3" />
@@ -2046,10 +2046,10 @@ function App() {
                       )
                     ) : (
                       /* Assistant Message */
-                      <div className="text-left space-y-2.5">
+                      <div className="text-left space-y-2">
                         {/* Live Searching Web status indicator */}
                         {isSearchingWeb && index === messages.length - 1 && (
-                          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1c1c1e] border border-white/10 text-xs text-[#8a8a8e] animate-pulse">
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1c1c1e] border border-white/10 text-[10px] sm:text-xs text-[#8a8a8e] animate-pulse">
                             <Globe size={13} className="text-[#70CFFF] animate-spin" />
                             <span>Searching the web...</span>
                           </div>
@@ -2057,26 +2057,26 @@ function App() {
 
                         {/* Search Grounding Sources (if available) */}
                         {msg.searchSources && msg.searchSources.length > 0 && (
-                          <div className="mb-2.5 space-y-1.5">
-                            <div className="flex items-center gap-1.5 text-xs text-[#8a8a8e]">
+                          <div className="mb-2 space-y-1">
+                            <div className="flex items-center gap-1 text-[10px] sm:text-xs text-[#8a8a8e]">
                               <Globe size={13} className="text-[#70CFFF]" />
                               <span className="font-medium">Sources ({msg.searchSources.length})</span>
                             </div>
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="flex flex-wrap gap-1">
                               {msg.searchSources.map((source, sIdx) => (
                                 <a
                                   key={sIdx}
                                   href={source.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/10 text-xs text-[#8a8a8e] hover:text-white transition-colors max-w-xs truncate"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/10 text-[9.5px] sm:text-xs text-[#8a8a8e] hover:text-white transition-colors max-w-xs truncate"
                                   title={source.snippet || source.title}
                                 >
-                                  <span className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-mono shrink-0">
+                                  <span className="w-3.5 h-3.5 rounded-full bg-white/10 flex items-center justify-center text-[9px] font-mono shrink-0">
                                     {sIdx + 1}
                                   </span>
                                   <span className="truncate">{source.title || source.url}</span>
-                                  <ExternalLink size={10} className="shrink-0 opacity-60" />
+                                  <ExternalLink size={9} className="shrink-0 opacity-60" />
                                 </a>
                               ))}
                             </div>
@@ -2085,15 +2085,15 @@ function App() {
 
                         {/* Live Thinking Block (while reasoning pass is running) */}
                         {msg.isThinking && (
-                          <div className="mb-2.5 rounded-xl bg-[#1c1c1e]/60 border border-white/10 p-3 text-xs">
-                            <div className="flex items-center gap-2 font-medium text-[#c4c7c5] mb-2">
+                          <div className="mb-2 rounded-xl bg-[#1c1c1e]/60 border border-white/10 p-2 sm:p-2.5 text-[10px] sm:text-xs">
+                            <div className="flex items-center gap-1.5 font-medium text-[#c4c7c5] mb-1 text-[10px] sm:text-xs">
                               <Brain size={14} className="text-[#9B72CF] animate-pulse" />
                               <span>Thinking... {thinkingSeconds}s</span>
                             </div>
                             {msg.reasoning && (
-                              <div className="border-l-2 border-white/20 pl-3 py-1 font-mono text-[12px] sm:text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#8a8a8e]">
+                              <div className="border-l-2 border-white/20 pl-2.5 py-0.5 font-mono text-[10px] sm:text-[11.5px] leading-relaxed whitespace-pre-wrap text-[#8a8a8e]">
                                 {msg.reasoning}
-                                <span className="inline-block w-1.5 h-3.5 ml-1 bg-[#9B72CF] animate-pulse align-middle" />
+                                <span className="inline-block w-1 h-3 ml-1 bg-[#9B72CF] animate-pulse align-middle" />
                               </div>
                             )}
                           </div>
@@ -2101,13 +2101,13 @@ function App() {
 
                         {/* Collapsed Thought Block (after reasoning pass is complete) */}
                         {!msg.isThinking && msg.reasoning && (
-                          <div className="mb-2.5 rounded-xl bg-[#1c1c1e]/40 border border-white/10 overflow-hidden text-xs">
+                          <div className="mb-2 rounded-xl bg-[#1c1c1e]/40 border border-white/10 overflow-hidden text-[10px] sm:text-xs">
                             <button
                               type="button"
                               onClick={() => toggleThoughtExpanded(index)}
-                              className="w-full flex items-center justify-between px-3 py-2 text-[#8a8a8e] hover:text-[#e8e8e8] hover:bg-white/[0.03] transition-colors cursor-pointer text-left"
+                              className="w-full flex items-center justify-between px-2.5 py-1.5 text-[#8a8a8e] hover:text-[#e8e8e8] hover:bg-white/[0.03] transition-colors cursor-pointer text-left"
                             >
-                              <div className="flex items-center gap-2 font-medium">
+                              <div className="flex items-center gap-1.5 font-medium text-[10px] sm:text-xs">
                                 <Brain size={14} className="text-[#9B72CF]" />
                                 <span>Thought for {msg.thoughtTime || 4} seconds</span>
                               </div>
@@ -2118,8 +2118,8 @@ function App() {
                               )}
                             </button>
                             {expandedThoughts.has(index) && (
-                              <div className="px-3 pb-3 pt-1 border-t border-white/5">
-                                <div className="border-l-2 border-white/20 pl-3 py-1 font-mono text-[12px] sm:text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#8a8a8e]">
+                              <div className="px-2.5 pb-2.5 pt-1 border-t border-white/5">
+                                <div className="border-l-2 border-white/20 pl-2.5 py-0.5 font-mono text-[10px] sm:text-[11.5px] leading-relaxed whitespace-pre-wrap text-[#8a8a8e]">
                                   {msg.reasoning}
                                 </div>
                               </div>
@@ -2188,52 +2188,6 @@ function App() {
               </button>
             )}
 
-            {/* Think & Search Toggles Bar */}
-            <div className="flex items-center gap-2 mb-2 px-1">
-              <button
-                type="button"
-                onClick={toggleThink}
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border ${
-                  isThinkEnabled
-                    ? 'bg-[#9B72CF]/20 text-[#D8B4FE] border-[#9B72CF]/60 shadow-[0_0_12px_rgba(155,114,207,0.25)]'
-                    : 'bg-[#1c1c1e] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-[#282a2c]'
-                }`}
-                title="Toggle Reasoning Pass (Think)"
-              >
-                <Brain size={13} className={isThinkEnabled ? 'text-[#D8B4FE]' : 'text-[#8a8a8e]'} />
-                <span>Think</span>
-                {isThinkEnabled && <span className="w-1.5 h-1.5 rounded-full bg-[#D8B4FE] animate-pulse" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={toggleSearch}
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border ${
-                  isSearchEnabled
-                    ? 'bg-[#4E80EE]/20 text-[#70CFFF] border-[#4E80EE]/60 shadow-[0_0_12px_rgba(78,128,238,0.25)]'
-                    : 'bg-[#1c1c1e] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-[#282a2c]'
-                }`}
-                title="Toggle Web Search Grounding"
-              >
-                <Globe size={13} className={isSearchEnabled ? 'text-[#70CFFF]' : 'text-[#8a8a8e]'} />
-                <span>Search</span>
-                {isSearchEnabled && <span className="w-1.5 h-1.5 rounded-full bg-[#70CFFF] animate-pulse" />}
-              </button>
-
-              {isSearchingWeb && (
-                <span className="text-[11px] text-[#70CFFF] flex items-center gap-1 animate-pulse ml-1">
-                  <Globe size={11} className="animate-spin" />
-                  Searching web...
-                </span>
-              )}
-              {isThinkingLive && (
-                <span className="text-[11px] text-[#D8B4FE] flex items-center gap-1 animate-pulse ml-1">
-                  <Brain size={11} />
-                  Thinking ({thinkingSeconds}s)...
-                </span>
-              )}
-            </div>
-
             {/* Hidden file & image inputs */}
             <input
               type="file"
@@ -2250,14 +2204,14 @@ function App() {
               className="hidden"
             />
 
-            <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[24px] sm:rounded-[28px] border border-white/10 focus-within:border-white/25 transition-all shadow-2xl overflow-hidden">
+            <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[20px] sm:rounded-[24px] border border-white/10 focus-within:border-white/25 transition-all shadow-2xl overflow-hidden">
               {attachedImage && (
-                <div className="px-3 sm:px-4 pt-2.5 pb-1 flex items-center gap-2.5 border-b border-white/5 bg-white/[0.02]">
+                <div className="px-3 py-1.5 flex items-center gap-2 border-b border-white/5 bg-white/[0.02]">
                   <div className="relative group shrink-0">
                     <img
                       src={attachedImage.dataUrl}
                       alt="Attachment preview"
-                      className="h-12 w-12 object-cover rounded-lg border border-white/10 shadow"
+                      className="h-10 w-10 object-cover rounded-lg border border-white/10 shadow"
                     />
                     <button
                       type="button"
@@ -2265,32 +2219,64 @@ function App() {
                       className="absolute -top-1.5 -right-1.5 bg-black/80 hover:bg-red-500 text-white rounded-full p-0.5 border border-white/20 shadow transition-colors cursor-pointer"
                       title="Remove image"
                     >
-                      <X size={12} />
+                      <X size={10} />
                     </button>
                   </div>
-                  <div className="text-xs min-w-0 flex-1">
+                  <div className="text-[10px] sm:text-xs min-w-0 flex-1">
                     <p className="text-[#e3e3e3] font-medium truncate">{attachedImage.name}</p>
-                    <p className="text-[11px] text-[#70CFFF]">Gemini Vision ready</p>
+                    <p className="text-[9px] text-[#70CFFF]">Gemini Vision ready</p>
                   </div>
                 </div>
               )}
 
-              <div className="flex items-end gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5">
+              <div className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5">
                 {/* Circular Plus button for attachments */}
                 <button
                   type="button"
                   onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
-                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white/5 hover:bg-white/10 text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center mb-0.5 shrink-0 cursor-pointer border border-white/5"
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/5 hover:bg-white/10 text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center shrink-0 cursor-pointer border border-white/5"
                   title="Add attachment"
                 >
-                  <Plus size={18} />
+                  <Plus size={16} />
+                </button>
+
+                {/* Redesigned Mini Think Button on the search bar */}
+                <button
+                  type="button"
+                  onClick={toggleThink}
+                  className={`inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium transition-all shrink-0 cursor-pointer border ${
+                    isThinkEnabled
+                      ? 'bg-[#9B72CF]/25 text-[#D8B4FE] border-[#9B72CF]/60 shadow-[0_0_8px_rgba(155,114,207,0.3)]'
+                      : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
+                  }`}
+                  title="Toggle Reasoning Pass (Think)"
+                >
+                  <Brain size={12} className={isThinkEnabled ? 'text-[#D8B4FE]' : 'text-[#8a8a8e]'} />
+                  <span>Think</span>
+                  {isThinkEnabled && <span className="w-1 h-1 rounded-full bg-[#D8B4FE] animate-pulse" />}
+                </button>
+
+                {/* Redesigned Mini Search Button on the search bar */}
+                <button
+                  type="button"
+                  onClick={toggleSearch}
+                  className={`inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium transition-all shrink-0 cursor-pointer border ${
+                    isSearchEnabled
+                      ? 'bg-[#4E80EE]/25 text-[#70CFFF] border-[#4E80EE]/60 shadow-[0_0_8px_rgba(78,128,238,0.3)]'
+                      : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
+                  }`}
+                  title="Toggle Web Search Grounding"
+                >
+                  <Globe size={12} className={isSearchEnabled ? 'text-[#70CFFF]' : 'text-[#8a8a8e]'} />
+                  <span>Search</span>
+                  {isSearchEnabled && <span className="w-1 h-1 rounded-full bg-[#70CFFF] animate-pulse" />}
                 </button>
 
                 {/* Auto-expanding Input textarea */}
                 <textarea
                   rows={1}
                   placeholder="Type a message or hold to speak"
-                  className="flex-1 bg-transparent text-[#e8e8e8] focus:outline-none placeholder-[#8a8a8e] text-[13.5px] sm:text-base py-1.5 sm:py-2 resize-none max-h-36 custom-scrollbar min-w-0 leading-normal"
+                  className="flex-1 bg-transparent text-[#e8e8e8] focus:outline-none placeholder-[#8a8a8e] text-[11px] sm:text-sm px-1 py-1 resize-none max-h-32 custom-scrollbar min-w-0 leading-tight"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -2303,15 +2289,15 @@ function App() {
                 />
 
                 {/* Right side buttons */}
-                <div className="flex items-center gap-1.5 mb-0.5 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   {/* Circular Voice Button */}
                   <button
                     type="button"
                     onClick={() => setIsVoiceModeOpen(true)}
-                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white/5 hover:bg-white/10 text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center cursor-pointer border border-white/5"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/5 hover:bg-white/10 text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center cursor-pointer border border-white/5"
                     title="Start Live Voice Conversation"
                   >
-                    <Mic size={17} />
+                    <Mic size={15} />
                   </button>
 
                   {/* Circular Send or Stop button */}
@@ -2319,30 +2305,30 @@ function App() {
                     <button
                       type="button"
                       onClick={stopGeneration}
-                      className="w-8 h-8 sm:w-9 sm:h-9 bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all shadow-md flex items-center justify-center cursor-pointer"
+                      className="w-7 h-7 sm:w-8 sm:h-8 bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all shadow-md flex items-center justify-center cursor-pointer"
                       title="Stop generation"
                     >
-                      <Square size={13} className="fill-current" />
+                      <Square size={11} className="fill-current sm:w-3 sm:h-3" />
                     </button>
                   ) : (
                     <button
                       type="submit"
                       disabled={(!input.trim() && !attachedImage) || isLoading}
-                      className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full transition-all flex items-center justify-center cursor-pointer ${
+                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full transition-all flex items-center justify-center cursor-pointer ${
                         (input.trim() || attachedImage) && !isLoading
                           ? 'bg-white text-[#131314] hover:bg-gray-200 shadow-md scale-100 hover:scale-105 active:scale-95'
                           : 'bg-white/5 text-[#8a8a8e] cursor-not-allowed'
                       }`}
                       title="Send message"
                     >
-                      <Send size={15} />
+                      <Send size={13} />
                     </button>
                   )}
                 </div>
               </div>
             </form>
-            <div className="text-center mt-1.5 sm:mt-2 flex items-center justify-center px-2">
-              <p className="text-[10px] sm:text-[11px] text-[#8a8a8e] truncate">Gabby may display inaccurate info, including about people, so double-check its responses.</p>
+            <div className="text-center mt-1 flex items-center justify-center px-2">
+              <p className="text-[9px] sm:text-[11px] text-[#8a8a8e] truncate">Gabby may display inaccurate info, including about people, so double-check its responses.</p>
             </div>
           </div>
         </div>

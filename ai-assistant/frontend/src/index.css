@@ -714,77 +714,137 @@ body {
 .sound-wave-bar:nth-child(2) { animation-delay: 0.2s; }
 .sound-wave-bar:nth-child(3) { animation-delay: 0.4s; }
 
-/* DeepSeek Mobile Prose & Typography Refinement */
+/* DeepSeek Mobile Prose & Typography Refinement - Ultra-compact on small phones */
 .prose-chat {
-  font-size: 0.9375rem; /* 15px mobile, 16px desktop */
-  line-height: 1.6;
+  font-size: 0.75rem; /* 12px very tiny on mobile */
+  line-height: 1.48;
   color: #e8e8e8;
   word-break: break-word;
 }
 
+@media (max-width: 380px) {
+  .prose-chat {
+    font-size: 0.7rem; /* 11.2px on very small phones */
+    line-height: 1.42;
+  }
+}
+
 @media (min-width: 640px) {
   .prose-chat {
-    font-size: 1rem; /* 16px */
+    font-size: 0.9375rem; /* 15px desktop */
+    line-height: 1.6;
   }
 }
 
 .prose-chat p {
-  margin-bottom: 0.85rem;
-  line-height: 1.6;
+  margin-bottom: 0.45rem;
+  line-height: 1.48;
+}
+
+@media (min-width: 640px) {
+  .prose-chat p {
+    margin-bottom: 0.85rem;
+    line-height: 1.6;
+  }
 }
 
 /* Numbered section headers ("2. Recommended Architecture") */
 .prose-chat h1, .prose-chat h2 {
-  font-size: 1.15rem; /* ~18-20px */
+  font-size: 0.875rem; /* ~14px on mobile */
   font-weight: 700;
   color: #ffffff;
-  margin-top: 1.5rem;
-  margin-bottom: 0.5rem;
+  margin-top: 0.85rem;
+  margin-bottom: 0.3rem;
   letter-spacing: -0.01em;
   line-height: 1.35;
 }
 
+@media (min-width: 640px) {
+  .prose-chat h1, .prose-chat h2 {
+    font-size: 1.15rem; /* ~18-20px desktop */
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+}
+
 .prose-chat h3 {
-  font-size: 1.05rem;
+  font-size: 0.8125rem; /* 13px mobile */
   font-weight: 600;
   color: #f3f3f3;
-  margin-top: 1.25rem;
-  margin-bottom: 0.4rem;
+  margin-top: 0.65rem;
+  margin-bottom: 0.25rem;
+}
+
+@media (min-width: 640px) {
+  .prose-chat h3 {
+    font-size: 1.05rem;
+    margin-top: 1.25rem;
+    margin-bottom: 0.4rem;
+  }
 }
 
 .prose-chat h4, .prose-chat h5 {
-  font-size: 0.95rem;
+  font-size: 0.75rem; /* 12px mobile */
   font-weight: 600;
   color: #e8e8e8;
-  margin-top: 1rem;
-  margin-bottom: 0.35rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.2rem;
 }
 
 /* Thin horizontal rule between major sections */
 .prose-chat hr {
   border: none;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  margin: 1.5rem 0;
+  margin: 0.85rem 0;
+}
+
+@media (min-width: 640px) {
+  .prose-chat hr {
+    margin: 1.5rem 0;
+  }
 }
 
 /* Bullets with round disc and bold lead-in support */
 .prose-chat ul {
   list-style-type: disc;
-  padding-left: 1.35rem;
-  margin-top: 0.4rem;
-  margin-bottom: 0.85rem;
+  padding-left: 1.1rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .prose-chat ul {
+    padding-left: 1.35rem;
+    margin-top: 0.4rem;
+    margin-bottom: 0.85rem;
+  }
 }
 
 .prose-chat ol {
   list-style-type: decimal;
-  padding-left: 1.35rem;
-  margin-top: 0.4rem;
-  margin-bottom: 0.85rem;
+  padding-left: 1.1rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .prose-chat ol {
+    padding-left: 1.35rem;
+    margin-top: 0.4rem;
+    margin-bottom: 0.85rem;
+  }
 }
 
 .prose-chat li {
-  margin-bottom: 0.4rem;
-  line-height: 1.6;
+  margin-bottom: 0.2rem;
+  line-height: 1.48;
+}
+
+@media (min-width: 640px) {
+  .prose-chat li {
+    margin-bottom: 0.4rem;
+    line-height: 1.6;
+  }
 }
 
 .prose-chat li::marker {
@@ -799,12 +859,20 @@ body {
 /* DeepSeek Blockquote & Chain of thought text */
 .prose-chat blockquote {
   border-left: 2px solid rgba(255, 255, 255, 0.2);
-  padding-left: 0.85rem;
-  margin: 0.85rem 0;
+  padding-left: 0.65rem;
+  margin: 0.45rem 0;
   color: #8a8a8e;
-  font-size: 0.9rem;
+  font-size: 0.71875rem; /* ~11.5px mobile */
   background: transparent;
   border-radius: 0;
+}
+
+@media (min-width: 640px) {
+  .prose-chat blockquote {
+    padding-left: 0.85rem;
+    margin: 0.85rem 0;
+    font-size: 0.875rem;
+  }
 }
 
 .prose-chat a {
@@ -819,11 +887,11 @@ body {
 /* Phone in landscape compact styling */
 @media (max-height: 520px) and (orientation: landscape) {
   header {
-    height: 2.75rem !important;
+    height: 2.5rem !important;
   }
   .prose-chat {
-    font-size: 0.8125rem;
-    line-height: 1.45;
+    font-size: 0.7rem;
+    line-height: 1.4;
   }
 }
 

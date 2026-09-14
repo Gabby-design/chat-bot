@@ -804,6 +804,69 @@ body {
   color: #7dd3fc;
 }
 
+/* Mobile-First Compact Typography (< 640px) */
+@media (max-width: 640px) {
+  .prose-chat {
+    font-size: 0.8125rem; /* 13px - sharp, compact, comfortable to read */
+    line-height: 1.5;
+  }
+  .prose-chat h1 {
+    font-size: 1.1rem;
+    margin-top: 0.75rem;
+    margin-bottom: 0.3rem;
+  }
+  .prose-chat h2 {
+    font-size: 1.0rem;
+    margin-top: 0.65rem;
+    margin-bottom: 0.25rem;
+  }
+  .prose-chat h3 {
+    font-size: 0.9rem;
+    margin-top: 0.55rem;
+    margin-bottom: 0.2rem;
+  }
+  .prose-chat h4 {
+    font-size: 0.85rem;
+    margin-top: 0.45rem;
+    margin-bottom: 0.15rem;
+  }
+  .prose-chat p {
+    margin-bottom: 0.5rem;
+  }
+  .prose-chat ul, .prose-chat ol {
+    margin-top: 0.25rem;
+    margin-bottom: 0.5rem;
+    padding-left: 1.1rem;
+  }
+  .prose-chat li {
+    margin-bottom: 0.2rem;
+    font-size: 0.8125rem;
+  }
+  .prose-chat blockquote {
+    margin: 0.5rem 0;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.8rem;
+  }
+  .prose-chat table {
+    font-size: 0.72rem;
+    margin: 0.5rem 0;
+  }
+  .prose-chat th, .prose-chat td {
+    padding: 0.35rem 0.5rem;
+  }
+}
+
+/* Phone in landscape compact styling */
+@media (max-height: 520px) and (orientation: landscape) {
+  header {
+    height: 2.75rem !important;
+  }
+  .prose-chat {
+    font-size: 0.8125rem;
+    line-height: 1.45;
+  }
+}
+
 /* Gemini Live & Siri Style Voice Orb Animations */
 @keyframes orb-breathe {
   0%, 100% {

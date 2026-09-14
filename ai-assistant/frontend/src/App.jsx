@@ -26,6 +26,29 @@ const getClientGeminiKey = () => {
 };
 const GEMINI_API_KEY = getClientGeminiKey();
 
+// Natural English Voice Selector for TTS Listen Button
+const getEnglishVoice = () => {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+  const voices = window.speechSynthesis.getVoices() || [];
+  if (voices.length === 0) return null;
+
+  const preferred = [
+    'natural', 'google us english', 'google uk english',
+    'samantha', 'jenny', 'aria', 'guy', 'ava', 'victoria',
+    'en-us', 'en-gb'
+  ];
+
+  for (const name of preferred) {
+    const match = voices.find(
+      (v) => v.lang.toLowerCase().startsWith('en') && v.name.toLowerCase().includes(name)
+    );
+    if (match) return match;
+  }
+
+  const anyEnglish = voices.find((v) => v.lang.toLowerCase().startsWith('en'));
+  return anyEnglish || voices[0];
+};
+
 async function streamGeminiDirect({ prompt, conversationHistory = [], modelSelection = 'standard', mode = 'chat', signal, onToken }) {
   let primaryModel = 'gemini-3.6-flash';
   let fallbackModels = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.8-flash'];
@@ -166,7 +189,7 @@ function CodeBlock({ className, children, ...props }) {
           )}
         </button>
       </div>
-      <pre className="p-4 overflow-x-auto text-[13.5px] leading-relaxed font-mono">
+      <pre className="p-2.5 sm:p-4 overflow-x-auto text-[11.5px] sm:text-[13.5px] leading-normal sm:leading-relaxed font-mono">
         <code className={className} {...props}>
           {children}
         </code>
@@ -303,16 +326,19 @@ function App() {
   useEffect(() => {
     const handleResize = () => {
       const width = window.innerWidth;
-      setIsMobile(width < 768);
-      setIsTablet(width >= 768 && width < 1024);
+      const height = window.innerHeight;
+      // Phone in landscape (height < 520) or standard mobile (width < 768)
+      const mobile = width < 768 || height < 520;
+      setIsMobile(mobile);
+      setIsTablet(!mobile && width < 1024);
 
-      // Auto-hide sidebars on mobile
-      if (width < 768) {
+      // Auto-hide sidebars on mobile or phone-landscape
+      if (mobile) {
         setIsSidebarOpen(false);
         setIsToolsOpen(false);
       } else if (width >= 1024) {
         setIsSidebarOpen(true);
-        setIsToolsOpen(false); // Keep tools sidebar closed
+        setIsToolsOpen(false);
       }
     };
 
@@ -321,18 +347,19 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Preload speech synthesis voices for crisp English TTS
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+  }, []);
+
   // Fetch chats on mount
   useEffect(() => {
     fetchChats();
-  }, []);
-
-  // Prevent unwanted auto-rotation on mobile devices
-  useEffect(() => {
-    try {
-      if (typeof window !== 'undefined' && window.screen?.orientation?.lock) {
-        window.screen.orientation.lock('portrait-primary').catch(() => {});
-      }
-    } catch (e) {}
   }, []);
 
   const saveChatLocally = (chatId, updatedMessages, title = null) => {
@@ -565,9 +592,20 @@ function App() {
       .replace(/```[\s\S]*?```/g, 'Code block omitted.')
       .replace(/`([^`]+)`/g, '$1')
       .replace(/[*_~#]/g, '')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[-–—]{2,}/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = 'en-US';
+
+    const englishVoice = getEnglishVoice();
+    if (englishVoice) {
+      utterance.voice = englishVoice;
+      utterance.lang = englishVoice.lang || 'en-US';
+    }
+
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
 
@@ -1162,50 +1200,50 @@ function App() {
     const isSpeaking = speakingIndex === index;
 
     return (
-      <div className="flex items-center gap-1.5 pt-2 opacity-95 transition-opacity">
+      <div className="flex items-center gap-1 sm:gap-1.5 pt-1.5 sm:pt-2 opacity-95 transition-opacity">
         {/* Copy Response Button */}
         <button
           onClick={() => copyToClipboard(msg.content, index)}
-          className="p-1.5 px-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors text-xs flex items-center gap-1 border border-transparent hover:border-white/10"
+          className="p-1 sm:p-1.5 px-1.5 sm:px-2 hover:bg-white/10 rounded-md sm:rounded-lg text-gray-400 hover:text-white transition-colors text-[11px] sm:text-xs flex items-center gap-1 border border-transparent hover:border-white/10"
           title="Copy response"
         >
           {copiedIndex === index ? (
             <>
-              <Check size={14} className="text-emerald-400" />
-              <span className="text-[11px] text-emerald-400 font-medium">Copied!</span>
+              <Check size={12} className="sm:w-3.5 sm:h-3.5 text-emerald-400" />
+              <span className="text-[10px] sm:text-[11px] text-emerald-400 font-medium">Copied!</span>
             </>
           ) : (
             <>
-              <Copy size={14} />
-              <span className="text-[11px] hidden sm:inline">Copy</span>
+              <Copy size={12} className="sm:w-3.5 sm:h-3.5" />
+              <span className="text-[10px] sm:text-[11px] hidden sm:inline">Copy</span>
             </>
           )}
         </button>
 
-        {/* Read Aloud / TTS Button */}
+        {/* Read Aloud / TTS Button (Native English) */}
         <button
           onClick={() => toggleSpeech(index, msg.content)}
-          className={`p-1.5 px-2 rounded-lg text-xs flex items-center gap-1.5 transition-colors border ${
+          className={`p-1 sm:p-1.5 px-1.5 sm:px-2 rounded-md sm:rounded-lg text-[11px] sm:text-xs flex items-center gap-1 sm:gap-1.5 transition-colors border ${
             isSpeaking
               ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
               : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
           }`}
-          title={isSpeaking ? 'Stop speaking' : 'Read aloud'}
+          title={isSpeaking ? 'Stop speaking' : 'Read aloud in English'}
         >
           {isSpeaking ? (
             <>
-              <div className="flex items-center gap-0.5 h-3">
+              <div className="flex items-center gap-0.5 h-2.5 sm:h-3">
                 <span className="sound-wave-bar" />
                 <span className="sound-wave-bar" />
                 <span className="sound-wave-bar" />
               </div>
-              <VolumeX size={14} />
-              <span className="text-[11px] hidden sm:inline">Stop</span>
+              <VolumeX size={12} className="sm:w-3.5 sm:h-3.5" />
+              <span className="text-[10px] sm:text-[11px] hidden sm:inline">Stop</span>
             </>
           ) : (
             <>
-              <Volume2 size={14} />
-              <span className="text-[11px] hidden sm:inline">Listen</span>
+              <Volume2 size={12} className="sm:w-3.5 sm:h-3.5" />
+              <span className="text-[10px] sm:text-[11px] hidden sm:inline">Listen</span>
             </>
           )}
         </button>
@@ -1213,36 +1251,36 @@ function App() {
         {/* Thumbs Up (Good Response) */}
         <button
           onClick={() => handleRate(index, 'like')}
-          className={`p-1.5 rounded-lg text-xs transition-colors border ${
+          className={`p-1 sm:p-1.5 rounded-md sm:rounded-lg text-[11px] sm:text-xs transition-colors border ${
             isLiked
               ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
               : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
           }`}
           title="Good response"
         >
-          <ThumbsUp size={14} className={isLiked ? 'fill-cyan-400' : ''} />
+          <ThumbsUp size={12} className={`sm:w-3.5 sm:h-3.5 ${isLiked ? 'fill-cyan-400' : ''}`} />
         </button>
 
         {/* Thumbs Down (Bad Response) */}
         <button
           onClick={() => handleRate(index, 'dislike')}
-          className={`p-1.5 rounded-lg text-xs transition-colors border ${
+          className={`p-1 sm:p-1.5 rounded-md sm:rounded-lg text-[11px] sm:text-xs transition-colors border ${
             isDisliked
               ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
               : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
           }`}
           title="Bad response"
         >
-          <ThumbsDown size={14} className={isDisliked ? 'fill-rose-400' : ''} />
+          <ThumbsDown size={12} className={`sm:w-3.5 sm:h-3.5 ${isDisliked ? 'fill-rose-400' : ''}`} />
         </button>
 
         {/* Regenerate Button */}
         <button
           onClick={() => regenerateMessage(index)}
-          className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors border border-transparent hover:border-white/10"
+          className="p-1 sm:p-1.5 hover:bg-white/10 rounded-md sm:rounded-lg text-gray-400 hover:text-white transition-colors border border-transparent hover:border-white/10"
           title="Regenerate response"
         >
-          <RotateCcw size={14} />
+          <RotateCcw size={12} className="sm:w-3.5 sm:h-3.5" />
         </button>
       </div>
     );
@@ -1251,15 +1289,15 @@ function App() {
   const SuggestionCard = ({ icon: Icon, title, description }) => (
     <button
       onClick={() => handleSuggestionClick(description)}
-      className="p-3 sm:p-4 rounded-2xl bg-[#1e1f20] hover:bg-[#282a2c] text-left transition-all border border-white/5 hover:border-white/10 group cursor-pointer flex flex-col justify-between min-h-[90px] sm:min-h-[120px] md:h-[145px] shadow-sm relative overflow-hidden"
+      className="p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-[#1e1f20] hover:bg-[#282a2c] text-left transition-all border border-white/5 hover:border-white/10 group cursor-pointer flex flex-col justify-between min-h-[72px] sm:min-h-[110px] md:h-[145px] shadow-sm relative overflow-hidden"
     >
       <div>
-        <h3 className="text-xs sm:text-sm font-medium text-[#e3e3e3] mb-0.5 sm:mb-1 group-hover:text-white transition-colors line-clamp-1">{title}</h3>
-        <p className="text-[11px] sm:text-xs text-[#c4c7c5] line-clamp-2 leading-tight sm:leading-relaxed">{description}</p>
+        <h3 className="text-[11.5px] sm:text-sm font-medium text-[#e3e3e3] mb-0.5 sm:mb-1 group-hover:text-white transition-colors line-clamp-1">{title}</h3>
+        <p className="text-[10px] sm:text-xs text-[#a8aaa8] line-clamp-2 leading-tight sm:leading-relaxed">{description}</p>
       </div>
       <div className="flex justify-end mt-1 sm:mt-auto">
-        <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-[#131314] flex items-center justify-center text-[#e3e3e3] group-hover:scale-110 group-hover:text-white transition-all border border-white/5">
-          <Icon size={13} className="sm:w-[15px] sm:h-[15px]" />
+        <div className="w-5 h-5 sm:w-8 sm:h-8 rounded-full bg-[#131314] flex items-center justify-center text-[#e3e3e3] group-hover:scale-110 group-hover:text-white transition-all border border-white/5">
+          <Icon size={11} className="sm:w-[15px] sm:h-[15px]" />
         </div>
       </div>
     </button>
@@ -1291,17 +1329,17 @@ function App() {
       {/* Mobile Backdrop when Sidebar Drawer is open */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden animate-fade-in"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden animate-fade-in"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       {/* Left Sidebar */}
       <aside
-        className={`bg-[#1e1f20] transition-all duration-300 ease-in-out flex flex-col border-r border-[#282a2c] fixed inset-y-0 left-0 z-50 md:relative md:z-auto shrink-0 ${
+        className={`bg-[#1e1f20] transition-all duration-300 ease-in-out flex flex-col border-r border-[#282a2c] fixed inset-y-0 left-0 z-50 lg:relative lg:z-auto shrink-0 ${
           isSidebarOpen
-            ? 'w-[280px] sm:w-[300px] md:w-[260px] translate-x-0'
-            : '-translate-x-full md:translate-x-0 w-0 md:w-[56px] overflow-hidden'
+            ? 'w-[280px] sm:w-[300px] lg:w-[260px] translate-x-0'
+            : '-translate-x-full lg:translate-x-0 w-0 lg:w-[56px] overflow-hidden'
         }`}
       >
         {isSidebarOpen ? (
@@ -1453,26 +1491,26 @@ function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full relative min-w-0 bg-[#131314]">
         {/* Header */}
-        <header className="h-14 flex items-center px-3 sm:px-4 justify-between bg-[#131314] border-b border-white/5 z-10 shrink-0">
-          <div className="flex items-center gap-2 sm:gap-3">
+        <header className="h-12 sm:h-14 flex items-center px-2.5 sm:px-4 justify-between bg-[#131314] border-b border-white/5 z-10 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             {(!isSidebarOpen || isMobile) && (
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="p-2 hover:bg-[#1e1f20] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer"
+                className="p-1.5 sm:p-2 hover:bg-[#1e1f20] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer"
                 title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
               >
-                <Menu size={20} />
+                <Menu size={18} className="sm:w-5 sm:h-5" />
               </button>
             )}
-            <div className="flex items-center gap-2">
-              <GeminiSparkle className="w-5 h-5 sm:w-6 sm:h-6" />
-              <span className="text-lg sm:text-xl font-medium tracking-tight text-[#e3e3e3]">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <GeminiSparkle className="w-4 h-4 sm:w-6 sm:h-6" />
+              <span className="text-base sm:text-xl font-medium tracking-tight text-[#e3e3e3]">
                 Gabby
               </span>
               <button
                 type="button"
                 onClick={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
-                className="text-[11px] text-[#8e918f] hover:text-[#e3e3e3] bg-[#1e1f20] hover:bg-[#282a2c] px-2 sm:px-2.5 py-0.5 rounded-full border border-white/5 ml-1 font-mono flex items-center gap-1 transition-colors cursor-pointer"
+                className="text-[10px] sm:text-[11px] text-[#8e918f] hover:text-[#e3e3e3] bg-[#1e1f20] hover:bg-[#282a2c] px-2 sm:px-2.5 py-0.5 rounded-full border border-white/5 ml-0.5 sm:ml-1 font-mono flex items-center gap-0.5 sm:gap-1 transition-colors cursor-pointer"
                 title="Select Gemini Model"
               >
                 <span>
@@ -1482,7 +1520,7 @@ function App() {
                     ? '3.7 Flash'
                     : '3.8 Flash'}
                 </span>
-                <ChevronDown size={11} />
+                <ChevronDown size={10} className="sm:w-[11px] sm:h-[11px]" />
               </button>
             </div>
           </div>
@@ -1492,10 +1530,10 @@ function App() {
               <button
                 type="button"
                 onClick={handleInstallApp}
-                className="p-2 sm:px-3 sm:py-1.5 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] border border-[#70CFFF]/40 hover:border-[#70CFFF]/70 text-[#70CFFF] hover:text-white text-xs font-medium flex items-center gap-1.5 transition-all shadow-sm group cursor-pointer"
+                className="p-1.5 sm:px-3 sm:py-1.5 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] border border-[#70CFFF]/40 hover:border-[#70CFFF]/70 text-[#70CFFF] hover:text-white text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 transition-all shadow-sm group cursor-pointer"
                 title="Install Gabby as a standalone App"
               >
-                <Download size={14} className="text-[#70CFFF] group-hover:scale-110 transition-transform" />
+                <Download size={13} className="text-[#70CFFF] group-hover:scale-110 transition-transform sm:w-3.5 sm:h-3.5" />
                 <span className="hidden sm:inline">Install App</span>
               </button>
             )}
@@ -1504,14 +1542,14 @@ function App() {
             <button
               type="button"
               onClick={() => setIsVoiceModeOpen(true)}
-              className="px-2.5 sm:px-3.5 py-1.5 rounded-full bg-gradient-to-r from-[#4E80EE]/15 via-[#9B72CF]/15 to-[#E275AA]/15 hover:from-[#4E80EE]/25 hover:via-[#9B72CF]/25 hover:to-[#E275AA]/25 border border-[#4E80EE]/30 hover:border-[#9B72CF]/50 text-[#e3e3e3] text-xs font-medium flex items-center gap-1.5 transition-all shadow-sm group cursor-pointer"
+              className="px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-[#4E80EE]/15 via-[#9B72CF]/15 to-[#E275AA]/15 hover:from-[#4E80EE]/25 hover:via-[#9B72CF]/25 hover:to-[#E275AA]/25 border border-[#4E80EE]/30 hover:border-[#9B72CF]/50 text-[#e3e3e3] text-[11px] sm:text-xs font-medium flex items-center gap-1 sm:gap-1.5 transition-all shadow-sm group cursor-pointer"
               title="Start Live Voice Conversation"
             >
-              <Mic size={14} className="text-[#70CFFF] group-hover:scale-110 transition-transform" />
+              <Mic size={13} className="text-[#70CFFF] group-hover:scale-110 transition-transform sm:w-3.5 sm:h-3.5" />
               <span className="hidden xs:inline">Voice Mode</span>
               <span className="xs:hidden">Voice</span>
             </button>
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-[#4E80EE] via-[#9B72CF] to-[#E275AA] flex items-center justify-center text-xs sm:text-sm font-semibold text-white shadow-md">
+            <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-[#4E80EE] via-[#9B72CF] to-[#E275AA] flex items-center justify-center text-[11px] sm:text-sm font-semibold text-white shadow-md">
               G
             </div>
           </div>
@@ -1521,13 +1559,13 @@ function App() {
         <div className="flex-1 overflow-y-auto scroll-smooth relative">
           {messages.length === 0 ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-3 sm:p-6 overflow-y-auto custom-scrollbar">
-              <div className="max-w-4xl w-full flex flex-col items-start space-y-4 sm:space-y-6 md:space-y-8 animate-fade-in my-auto pb-24 sm:pb-28">
+              <div className="max-w-4xl w-full flex flex-col items-start space-y-3 sm:space-y-6 md:space-y-8 animate-fade-in my-auto pb-20 sm:pb-28">
                 {/* Gemini Signature Heading */}
-                <div className="space-y-1 text-left px-1 sm:px-2">
-                  <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-medium tracking-tight bg-gradient-to-r from-[#4E80EE] via-[#9B72CF] to-[#E275AA] bg-clip-text text-transparent">
+                <div className="space-y-0.5 sm:space-y-1 text-left px-1 sm:px-2">
+                  <h1 className="text-xl sm:text-3xl md:text-5xl lg:text-6xl font-medium tracking-tight bg-gradient-to-r from-[#4E80EE] via-[#9B72CF] to-[#E275AA] bg-clip-text text-transparent">
                     Hello, Gabriel
                   </h1>
-                  <h2 className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-medium text-[#757775]">
+                  <h2 className="text-sm sm:text-2xl md:text-3xl lg:text-4xl font-medium text-[#757775]">
                     How can I help you today?
                   </h2>
                 </div>
@@ -1590,7 +1628,7 @@ function App() {
                         /* Inline Edit Form */
                         <div className="bg-[#1e1f20] border border-[#4E80EE]/50 rounded-2xl p-3.5 shadow-xl text-left">
                           <textarea
-                            className="w-full bg-transparent text-[#e3e3e3] text-sm focus:outline-none resize-none min-h-[70px] placeholder-[#8e918f] font-sans"
+                            className="w-full bg-transparent text-[#e3e3e3] text-xs sm:text-sm focus:outline-none resize-none min-h-[60px] sm:min-h-[70px] placeholder-[#8e918f] font-sans"
                             value={editingText}
                             onChange={(e) => setEditingText(e.target.value)}
                             onKeyDown={(e) => {
@@ -1602,18 +1640,18 @@ function App() {
                             autoFocus
                           />
                           <div className="flex justify-end items-center gap-2 mt-2 pt-2 border-t border-white/10">
-                            <span className="text-[11px] text-[#8e918f] mr-auto">Press Enter to save, Shift+Enter for newline</span>
+                            <span className="text-[10.5px] sm:text-[11px] text-[#8e918f] mr-auto">Press Enter to save, Shift+Enter for newline</span>
                             <button
                               type="button"
                               onClick={handleCancelEdit}
-                              className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#c4c7c5] hover:text-white hover:bg-white/10 transition-colors"
+                              className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-medium text-[#c4c7c5] hover:text-white hover:bg-white/10 transition-colors"
                             >
                               Cancel
                             </button>
                             <button
                               type="button"
                               onClick={() => handleSaveAndSubmitEdit(index)}
-                              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#4E80EE] to-[#9B72CF] hover:opacity-95 text-white font-semibold transition-all shadow flex items-center gap-1"
+                              className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#4E80EE] to-[#9B72CF] hover:opacity-95 text-white font-semibold transition-all shadow flex items-center gap-1"
                             >
                               <Check size={13} />
                               Save & Submit
@@ -1623,25 +1661,25 @@ function App() {
                       ) : (
                         /* Display User Bubble */
                         <div className="inline-flex flex-col items-end group/user">
-                          <div className="inline-block text-[15px] leading-relaxed bg-[#282a2c] text-[#e3e3e3] rounded-3xl rounded-tr-sm px-5 py-3 border border-white/5 shadow-sm">
+                          <div className="inline-block text-[13px] sm:text-[14.5px] md:text-[15px] leading-snug sm:leading-relaxed bg-[#282a2c] text-[#e3e3e3] rounded-2xl sm:rounded-3xl rounded-tr-sm px-3.5 py-2 sm:px-5 sm:py-3 border border-white/5 shadow-sm">
                             <p className="whitespace-pre-wrap text-left">{msg.content}</p>
                           </div>
                           {/* User action buttons on hover */}
                           <div className="opacity-0 group-hover/user:opacity-100 transition-opacity mt-1 flex items-center gap-1">
                             <button
                               onClick={() => handleStartEdit(index, msg.content)}
-                              className="flex items-center gap-1 text-xs text-[#8e918f] hover:text-[#70CFFF] px-2 py-1 rounded-md hover:bg-white/5 transition-colors"
+                              className="flex items-center gap-1 text-[11px] sm:text-xs text-[#8e918f] hover:text-[#70CFFF] px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
                               title="Edit message"
                             >
-                              <Pencil size={12} />
+                              <Pencil size={11} className="sm:w-3 sm:h-3" />
                               <span>Edit</span>
                             </button>
                             <button
                               onClick={() => copyToClipboard(msg.content, index)}
-                              className="text-xs text-[#8e918f] hover:text-white px-2 py-1 rounded-md hover:bg-white/5 transition-colors"
+                              className="text-[11px] sm:text-xs text-[#8e918f] hover:text-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
                               title="Copy text"
                             >
-                              <Copy size={12} />
+                              <Copy size={11} className="sm:w-3 sm:h-3" />
                             </button>
                           </div>
                         </div>
@@ -1712,7 +1750,7 @@ function App() {
                 <textarea
                   rows={1}
                   placeholder="Ask Gabby..."
-                  className="flex-1 bg-transparent text-[#e3e3e3] focus:outline-none placeholder-[#8e918f] text-sm py-1.5 sm:py-2 resize-none max-h-36 custom-scrollbar min-w-0"
+                  className="flex-1 bg-transparent text-[#e3e3e3] focus:outline-none placeholder-[#8e918f] text-[13px] sm:text-sm py-1.5 sm:py-2 resize-none max-h-36 custom-scrollbar min-w-0 leading-normal"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {

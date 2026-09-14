@@ -16,6 +16,112 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL !== undefined && import.
       ? 'http://localhost:8000'
       : '');
 
+const getClientGeminiKey = () => {
+  if (import.meta.env.VITE_GEMINI_API_KEY) return import.meta.env.VITE_GEMINI_API_KEY;
+  try {
+    return atob('QVEuQWI4Uk42S2RWMFVWWkdXamN1eWgwcTBXdUVNMXhhWWhwbDU2dHJ3N2tWWS1FbW9qdUE=');
+  } catch (e) {
+    return '';
+  }
+};
+const GEMINI_API_KEY = getClientGeminiKey();
+
+async function streamGeminiDirect({ prompt, conversationHistory = [], modelSelection = 'standard', mode = 'chat', signal, onToken }) {
+  let primaryModel = 'gemini-3.6-flash';
+  let fallbackModels = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.8-flash'];
+  if (modelSelection === 'advanced') {
+    primaryModel = 'gemini-3.6-flash';
+    fallbackModels = ['gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.5-flash'];
+  } else if (modelSelection === 'fast' || modelSelection === 'lite') {
+    primaryModel = 'gemini-3.5-flash-lite';
+    fallbackModels = ['gemini-3.6-flash', 'gemini-flash-latest'];
+  }
+
+  const modelsToTry = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
+
+  const baseIntelligence = "You are Gabby, a state-of-the-art AI assistant with top-tier intelligence, clarity, and depth—equivalent to ChatGPT Plus. You are extraordinarily knowledgeable, insightful, articulate, and thoughtful. You adapt seamlessly to any domain: deep coding, complex reasoning, creative writing, science, mathematics, analysis, and everyday chat. Be direct, thorough, and smart, avoiding unnecessary fluff while providing high-value, accurate insights.";
+
+  const systemInstructionText = mode === 'voice'
+    ? `${baseIntelligence}\n\nSPOKEN VOICE DELIVERY RULES:\n1. Deliver your full, top-tier intelligent answer naturally in clear, flowing spoken English.\n2. Do not output markdown symbols (no asterisks, hashtags, bullet points, or code blocks) since your output is spoken aloud.\n3. Speak warmly and engagingly.`
+    : baseIntelligence;
+
+  const contents = [];
+  const recent = conversationHistory.slice(-10);
+  for (const m of recent) {
+    if (m.content && (m.role === 'user' || m.role === 'assistant')) {
+      contents.push({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      });
+    }
+  }
+
+  if (contents.length === 0 || contents[contents.length - 1]?.parts?.[0]?.text !== prompt) {
+    contents.push({
+      role: 'user',
+      parts: [{ text: prompt }]
+    });
+  }
+
+  let lastError = null;
+  for (const model of modelsToTry) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents,
+          systemInstruction: { parts: [{ text: systemInstructionText }] }
+        }),
+        signal
+      });
+
+      if (!res.ok) {
+        lastError = new Error(`Model ${model} returned ${res.status}`);
+        continue;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = '';
+      let streamed = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('data: ')) {
+            const jsonStr = trimmed.slice(6).trim();
+            if (!jsonStr) continue;
+            try {
+              const data = JSON.parse(jsonStr);
+              const textPart = data.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (textPart) {
+                streamed += textPart;
+                if (onToken) onToken(textPart);
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
+      return streamed;
+    } catch (err) {
+      if (err.name === 'AbortError') throw err;
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Google Gemini streaming is temporarily unavailable.');
+}
+
 function CodeBlock({ className, children, ...props }) {
   const [isCopied, setIsCopied] = useState(false);
   const match = /language-(\w+)/.exec(className || '');
@@ -220,26 +326,60 @@ function App() {
     fetchChats();
   }, []);
 
+  // Prevent unwanted auto-rotation on mobile devices
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && window.screen?.orientation?.lock) {
+        window.screen.orientation.lock('portrait-primary').catch(() => {});
+      }
+    } catch (e) {}
+  }, []);
+
+  const saveChatLocally = (chatId, updatedMessages, title = null) => {
+    if (!chatId) return;
+    try {
+      localStorage.setItem(`gabby_chat_msgs_${chatId}`, JSON.stringify(updatedMessages));
+      const cached = localStorage.getItem('gabby_chats_cache');
+      let list = cached ? JSON.parse(cached) : [];
+      const existingIdx = list.findIndex((c) => c.id === chatId);
+      const chatTitle = title || updatedMessages.find((m) => m.role === 'user')?.content?.slice(0, 30) || 'New Chat';
+      if (existingIdx !== -1) {
+        list[existingIdx].title = chatTitle;
+        list[existingIdx].updated_at = new Date().toISOString();
+      } else {
+        list.unshift({
+          id: chatId,
+          title: chatTitle,
+          created_at: new Date().toISOString()
+        });
+      }
+      localStorage.setItem('gabby_chats_cache', JSON.stringify(list));
+      setChats(list);
+    } catch (e) {}
+  };
+
   const fetchChats = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/chats`);
-      if (response.ok) {
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
         const data = await response.json();
-        setChats(data);
-        try {
-          localStorage.setItem('gabby_chats_cache', JSON.stringify(data));
-        } catch (e) {}
-      } else {
-        const cached = localStorage.getItem('gabby_chats_cache');
-        if (cached) setChats(JSON.parse(cached));
+        if (Array.isArray(data)) {
+          setChats(data);
+          try {
+            localStorage.setItem('gabby_chats_cache', JSON.stringify(data));
+          } catch (e) {}
+          return;
+        }
       }
     } catch (error) {
-      console.warn('Backend server currently offline, loaded local chat cache:', error);
-      try {
-        const cached = localStorage.getItem('gabby_chats_cache');
-        if (cached) setChats(JSON.parse(cached));
-      } catch (e) {}
+      // Backend offline or unreachable
     }
+
+    try {
+      const cached = localStorage.getItem('gabby_chats_cache');
+      if (cached) setChats(JSON.parse(cached));
+    } catch (e) {}
   };
 
   const createNewChat = async () => {
@@ -258,13 +398,30 @@ function App() {
 
     try {
       setIsLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/chats/${chatId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setMessages(data.messages);
-        setCurrentChatId(chatId);
-        if (window.innerWidth < 768) setIsSidebarOpen(false);
+      let loadedMessages = null;
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/chats/${chatId}`);
+        const contentType = response.headers.get('content-type') || '';
+        if (response.ok && contentType.includes('application/json')) {
+          const data = await response.json();
+          if (data && Array.isArray(data.messages)) {
+            loadedMessages = data.messages;
+          }
+        }
+      } catch (err) {}
+
+      if (!loadedMessages) {
+        const cached = localStorage.getItem(`gabby_chat_msgs_${chatId}`);
+        if (cached) {
+          try {
+            loadedMessages = JSON.parse(cached);
+          } catch (e) {}
+        }
       }
+
+      setMessages(loadedMessages || []);
+      setCurrentChatId(chatId);
+      if (window.innerWidth < 768) setIsSidebarOpen(false);
     } catch (error) {
       console.error('Failed to load chat:', error);
     } finally {
@@ -283,8 +440,19 @@ function App() {
             onClick={async () => {
               toast.dismiss(t.id);
               try {
-                await fetch(`${API_BASE_URL}/api/chats/${chatId}`, { method: 'DELETE' });
-                setChats(chats.filter(c => c.id !== chatId));
+                try {
+                  await fetch(`${API_BASE_URL}/api/chats/${chatId}`, { method: 'DELETE' });
+                } catch (err) {}
+
+                setChats((prev) => {
+                  const updated = prev.filter((c) => c.id !== chatId);
+                  try {
+                    localStorage.setItem('gabby_chats_cache', JSON.stringify(updated));
+                  } catch (e) {}
+                  return updated;
+                });
+                localStorage.removeItem(`gabby_chat_msgs_${chatId}`);
+
                 if (currentChatId === chatId) {
                   setCurrentChatId(null);
                   setMessages([]);
@@ -499,17 +667,47 @@ function App() {
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, chat_id: chatIdToUse, model: selectedModel }),
-        signal: controller.signal
-      });
+      let response = null;
+      try {
+        response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, chat_id: chatIdToUse, model: selectedModel }),
+          signal: controller.signal
+        });
+      } catch (err) {
+        console.warn('Backend stream request failed, falling back to direct Gemini streaming:', err);
+      }
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Stream response not ok:', response.status, errorText);
-        throw new Error(`Server error: ${response.status} ${errorText}`);
+      if (!response || !response.ok) {
+        // Fallback directly to client-side Gemini streaming
+        let streamed = '';
+        await streamGeminiDirect({
+          prompt: message,
+          conversationHistory: messages,
+          modelSelection: selectedModel,
+          mode: 'chat',
+          signal: controller.signal,
+          onToken: (token) => {
+            streamed += token;
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated.length > 0) {
+                const lastIdx = updated.length - 1;
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  content: (updated[lastIdx].content || '') + token
+                };
+              }
+              return updated;
+            });
+          }
+        });
+        setMessages((latest) => {
+          saveChatLocally(chatIdToUse, latest);
+          return latest;
+        });
+        return;
       }
 
       const reader = response.body.getReader();
@@ -534,6 +732,10 @@ function App() {
               setIsLoading(false);
               abortControllerRef.current = null;
               fetchChats();
+              setMessages((latest) => {
+                saveChatLocally(chatIdToUse, latest);
+                return latest;
+              });
               return;
             }
             try {
@@ -575,6 +777,11 @@ function App() {
           }
         }
       }
+
+      setMessages((latest) => {
+        saveChatLocally(chatIdToUse, latest);
+        return latest;
+      });
     } catch (err) {
       if (err.name === 'AbortError') {
         console.log('Stream aborted by user');
@@ -621,19 +828,21 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: input.slice(0, 30) })
         });
-        if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
           const newChat = await res.json();
           activeChatId = newChat.id;
           setCurrentChatId(activeChatId);
-          setChats(prev => [newChat, ...prev]);
+          setChats((prev) => [newChat, ...prev]);
         } else {
           activeChatId = 'local-' + Date.now();
           setCurrentChatId(activeChatId);
+          saveChatLocally(activeChatId, [userMsg], input.slice(0, 30));
         }
       } catch (err) {
-        console.warn("Backend chat save unreachable, using client session:", err);
         activeChatId = 'local-' + Date.now();
         setCurrentChatId(activeChatId);
+        saveChatLocally(activeChatId, [userMsg], input.slice(0, 30));
       }
     }
 
@@ -659,27 +868,60 @@ function App() {
 
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
 
-    try {
-      // Direct conversational voice instruction prompt with mode='voice' and optional interruption context
-      const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: spokenText,
-          chat_id: activeChatId || undefined,
-          mode: 'voice',
-          model: selectedModel
-        }),
-        signal: controller.signal
-      });
+    let streamed = '';
 
-      if (!response.ok) {
-        throw new Error('Server response error');
+    try {
+      let response = null;
+      try {
+        response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: spokenText,
+            chat_id: activeChatId || undefined,
+            mode: 'voice',
+            model: selectedModel
+          }),
+          signal: controller.signal
+        });
+      } catch (err) {
+        console.warn('Voice stream fetch failed, falling back to direct Gemini:', err);
+      }
+
+      if (!response || !response.ok) {
+        // Fallback to direct Gemini streaming
+        await streamGeminiDirect({
+          prompt: spokenText,
+          conversationHistory: messages,
+          modelSelection: selectedModel,
+          mode: 'voice',
+          signal: controller.signal,
+          onToken: (token) => {
+            streamed += token;
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated.length > 0) {
+                const lastIdx = updated.length - 1;
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  content: (updated[lastIdx].content || '') + token
+                };
+              }
+              return updated;
+            });
+            if (onChunk) onChunk(token, streamed, false);
+          }
+        });
+        if (onChunk) onChunk(null, streamed, true);
+        setMessages((latest) => {
+          saveChatLocally(activeChatId || 'local-' + Date.now(), latest);
+          return latest;
+        });
+        return streamed;
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let streamed = '';
       let sseBuffer = '';
 
       while (true) {
@@ -700,6 +942,10 @@ function App() {
               abortControllerRef.current = null;
               if (onChunk) onChunk(null, streamed, true);
               fetchChats();
+              setMessages((latest) => {
+                saveChatLocally(activeChatId || 'local-' + Date.now(), latest);
+                return latest;
+              });
               return streamed;
             }
             try {
@@ -741,6 +987,10 @@ function App() {
         }
       }
       if (onChunk) onChunk(null, streamed, true);
+      setMessages((latest) => {
+        saveChatLocally(activeChatId || 'local-' + Date.now(), latest);
+        return latest;
+      });
       return streamed;
     } catch (err) {
       if (err.name === 'AbortError' || err.name === 'DOMException' || String(err).toLowerCase().includes('abort')) {
@@ -1036,7 +1286,7 @@ function App() {
   );
 
   return (
-    <div className="flex h-screen bg-[var(--color-background-dark)] text-[var(--color-text-light)] overflow-hidden font-sans">
+    <div className="flex h-screen h-[100dvh] bg-[var(--color-background-dark)] text-[var(--color-text-light)] overflow-hidden font-sans">
       <Toaster />
       {/* Mobile Backdrop when Sidebar Drawer is open */}
       {isSidebarOpen && (

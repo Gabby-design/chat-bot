@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast, { Toaster } from 'react-hot-toast';
 import VoiceModeModal from './components/VoiceModeModal.jsx';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -2182,7 +2183,7 @@ function App() {
         />
       )}
 
-
+      <SpeedInsights />
     </div>
   );
 }

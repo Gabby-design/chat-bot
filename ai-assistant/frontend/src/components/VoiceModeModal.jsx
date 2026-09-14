@@ -323,8 +323,9 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
 
       recognition.onresult = (event) => {
         if (isShuttingDownRef.current) return;
-        // In processing state, mic recognition is disabled
-        if (voiceStateRef.current === 'processing') return;
+        // In processing or streaming states (before audio playback begins), ignore mic recognition events
+        // to prevent residual user input (like 'hi') from aborting the connection
+        if (voiceStateRef.current === 'processing' || voiceStateRef.current === 'streaming') return;
 
         let interimTranscript = '';
         let finalTranscript = '';
@@ -344,7 +345,7 @@ export default function VoiceModeModal({ isOpen, onClose, onSendMessage, onAbort
         if (!currentText) return;
 
         const cleanHeard = currentText.toLowerCase().replace(/[.,!?;:'"“”\-—]/g, ' ').trim();
-        const isCurrentlySpeaking = voiceStateRef.current === 'speaking' || voiceStateRef.current === 'streaming' || isSpeakingRef.current;
+        const isCurrentlySpeaking = voiceStateRef.current === 'speaking' && isSpeakingRef.current;
 
         // 5. TRUE INTERRUPTIONS (when AI is speaking or streaming):
         if (isCurrentlySpeaking) {

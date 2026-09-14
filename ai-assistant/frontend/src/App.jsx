@@ -677,6 +677,19 @@ function App() {
               if (parsed.chat_id && !currentChatId) {
                 setCurrentChatId(parsed.chat_id);
               }
+              if (parsed.error) {
+                console.error('Server error received in voice stream:', parsed.error);
+                streamed = parsed.error;
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  if (updated.length > 0) {
+                    updated[updated.length - 1].content = parsed.error;
+                  }
+                  return updated;
+                });
+                if (onChunk) onChunk(null, parsed.error, true);
+                return parsed.error;
+              }
               if (parsed.text) {
                 const newToken = parsed.text;
                 streamed += newToken;
@@ -700,8 +713,8 @@ function App() {
       if (onChunk) onChunk(null, streamed, true);
       return streamed;
     } catch (err) {
-      if (err.name === 'AbortError') {
-        console.log('Voice stream aborted by user interruption');
+      if (err.name === 'AbortError' || err.name === 'DOMException' || String(err).toLowerCase().includes('abort')) {
+        console.log('Voice stream aborted cleanly by user');
         return '';
       }
       console.error('Voice stream error:', err);

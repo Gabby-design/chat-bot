@@ -35,7 +35,16 @@ app = FastAPI(title="Gabby API")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://localhost:3003",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "https://gabby-ai.netlify.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -167,17 +176,17 @@ async def chat_stream(request: ChatRequest):
             # Unified Model Routing for both Text and Voice:
             # Respects user model selection with high-availability fallbacks
             model_selection = request.model or ""
-            configured_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+            configured_model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
             
             if model_selection == "advanced":
-                primary_model = "gemini-3.8-flash"
-                fallback_models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash"]
+                primary_model = "gemini-3.6-flash"
+                fallback_models = ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.8-flash"]
             elif model_selection in ("fast", "lite"):
                 primary_model = "gemini-3.5-flash-lite"
-                fallback_models = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
+                fallback_models = ["gemini-3.6-flash", "gemini-3.5-flash"]
             else:
                 primary_model = configured_model
-                fallback_models = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash"]
+                fallback_models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash"]
             
             models_to_try = [primary_model]
             for model in fallback_models:

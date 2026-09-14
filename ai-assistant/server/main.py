@@ -32,23 +32,22 @@ database.init_db()
 
 app = FastAPI(title="Gabby API")
 
-# Configure CORS
+# Configure CORS for any origin (local, netlify, vercel, mobile)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:3002",
-        "http://localhost:3003",
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:5175",
-        "https://gabby-ai.netlify.app"
-    ],
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_cors_and_pna_headers(request, call_next):
+    """Support W3C Private Network Access for Chrome preflights."""
+    response = await call_next(request)
+    if request.headers.get("Access-Control-Request-Private-Network") == "true":
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
 
 class ChatRequest(BaseModel):
     message: str

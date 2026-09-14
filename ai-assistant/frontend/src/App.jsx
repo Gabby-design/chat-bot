@@ -6,7 +6,15 @@ import remarkGfm from 'remark-gfm';
 import toast, { Toaster } from 'react-hot-toast';
 import VoiceModeModal from './components/VoiceModeModal.jsx';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// Dynamic API_BASE_URL:
+// - If custom VITE_API_BASE_URL is provided, use it.
+// - If running on localhost or 127.0.0.1, use 'http://localhost:8000'.
+// - When deployed (Vercel, Netlify, custom domain), use '' so all requests use same-origin relative URLs (/api/...) avoiding CORS, Mixed Content, and Private Network Access errors.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL !== undefined && import.meta.env.VITE_API_BASE_URL !== '')
+  ? import.meta.env.VITE_API_BASE_URL
+  : (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ? 'http://localhost:8000'
+      : '');
 
 function CodeBlock({ className, children, ...props }) {
   const [isCopied, setIsCopied] = useState(false);
@@ -218,9 +226,19 @@ function App() {
       if (response.ok) {
         const data = await response.json();
         setChats(data);
+        try {
+          localStorage.setItem('gabby_chats_cache', JSON.stringify(data));
+        } catch (e) {}
+      } else {
+        const cached = localStorage.getItem('gabby_chats_cache');
+        if (cached) setChats(JSON.parse(cached));
       }
     } catch (error) {
-      console.error('Failed to fetch chats:', error);
+      console.warn('Backend server currently offline, loaded local chat cache:', error);
+      try {
+        const cached = localStorage.getItem('gabby_chats_cache');
+        if (cached) setChats(JSON.parse(cached));
+      } catch (e) {}
     }
   };
 
@@ -433,13 +451,19 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: updatedContent.slice(0, 30) })
         });
-        const newChat = await res.json();
-        activeChatId = newChat.id;
-        setCurrentChatId(activeChatId);
-        setChats((prev) => [newChat, ...prev]);
+        if (res.ok) {
+          const newChat = await res.json();
+          activeChatId = newChat.id;
+          setCurrentChatId(activeChatId);
+          setChats((prev) => [newChat, ...prev]);
+        } else {
+          activeChatId = 'local-' + Date.now();
+          setCurrentChatId(activeChatId);
+        }
       } catch (err) {
-        console.error('Failed to create chat', err);
-        return;
+        console.warn('Chat creation fallback to local session:', err);
+        activeChatId = 'local-' + Date.now();
+        setCurrentChatId(activeChatId);
       }
     }
 
@@ -597,13 +621,19 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: input.slice(0, 30) })
         });
-        const newChat = await res.json();
-        activeChatId = newChat.id;
-        setCurrentChatId(activeChatId);
-        setChats(prev => [newChat, ...prev]);
+        if (res.ok) {
+          const newChat = await res.json();
+          activeChatId = newChat.id;
+          setCurrentChatId(activeChatId);
+          setChats(prev => [newChat, ...prev]);
+        } else {
+          activeChatId = 'local-' + Date.now();
+          setCurrentChatId(activeChatId);
+        }
       } catch (err) {
-        console.error("Failed to create chat", err);
-        return;
+        console.warn("Backend chat save unreachable, using client session:", err);
+        activeChatId = 'local-' + Date.now();
+        setCurrentChatId(activeChatId);
       }
     }
 
@@ -971,15 +1001,15 @@ function App() {
   const SuggestionCard = ({ icon: Icon, title, description }) => (
     <button
       onClick={() => handleSuggestionClick(description)}
-      className="p-4 rounded-2xl bg-[#1e1f20] hover:bg-[#282a2c] text-left transition-all border border-white/5 hover:border-white/10 group cursor-pointer flex flex-col justify-between h-[150px] shadow-sm relative overflow-hidden"
+      className="p-3 sm:p-4 rounded-2xl bg-[#1e1f20] hover:bg-[#282a2c] text-left transition-all border border-white/5 hover:border-white/10 group cursor-pointer flex flex-col justify-between min-h-[90px] sm:min-h-[120px] md:h-[145px] shadow-sm relative overflow-hidden"
     >
       <div>
-        <h3 className="text-sm font-medium text-[#e3e3e3] mb-1 group-hover:text-white transition-colors">{title}</h3>
-        <p className="text-xs text-[#c4c7c5] line-clamp-2 leading-relaxed">{description}</p>
+        <h3 className="text-xs sm:text-sm font-medium text-[#e3e3e3] mb-0.5 sm:mb-1 group-hover:text-white transition-colors line-clamp-1">{title}</h3>
+        <p className="text-[11px] sm:text-xs text-[#c4c7c5] line-clamp-2 leading-tight sm:leading-relaxed">{description}</p>
       </div>
-      <div className="flex justify-end mt-auto">
-        <div className="w-8 h-8 rounded-full bg-[#131314] flex items-center justify-center text-[#e3e3e3] group-hover:scale-110 group-hover:text-white transition-all border border-white/5">
-          <Icon size={15} />
+      <div className="flex justify-end mt-1 sm:mt-auto">
+        <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-[#131314] flex items-center justify-center text-[#e3e3e3] group-hover:scale-110 group-hover:text-white transition-all border border-white/5">
+          <Icon size={13} className="sm:w-[15px] sm:h-[15px]" />
         </div>
       </div>
     </button>
@@ -1008,8 +1038,22 @@ function App() {
   return (
     <div className="flex h-screen bg-[var(--color-background-dark)] text-[var(--color-text-light)] overflow-hidden font-sans">
       <Toaster />
+      {/* Mobile Backdrop when Sidebar Drawer is open */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden animate-fade-in"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Left Sidebar */}
-      <aside className={`${isSidebarOpen ? 'w-[260px]' : 'w-[56px]'} bg-[#1e1f20] transition-all duration-300 ease-in-out flex flex-col border-r border-[#282a2c] relative shrink-0`}>
+      <aside
+        className={`bg-[#1e1f20] transition-all duration-300 ease-in-out flex flex-col border-r border-[#282a2c] fixed inset-y-0 left-0 z-50 md:relative md:z-auto shrink-0 ${
+          isSidebarOpen
+            ? 'w-[280px] sm:w-[300px] md:w-[260px] translate-x-0'
+            : '-translate-x-full md:translate-x-0 w-0 md:w-[56px] overflow-hidden'
+        }`}
+      >
         {isSidebarOpen ? (
           <>
             {/* Sidebar Header - Full */}
@@ -1159,34 +1203,46 @@ function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full relative min-w-0 bg-[#131314]">
         {/* Header */}
-        <header className="h-14 flex items-center px-4 justify-between bg-[#131314] border-b border-white/5 z-10">
-          <div className="flex items-center gap-3">
-            {!isSidebarOpen && (
+        <header className="h-14 flex items-center px-3 sm:px-4 justify-between bg-[#131314] border-b border-white/5 z-10 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {(!isSidebarOpen || isMobile) && (
               <button
-                onClick={() => setIsSidebarOpen(true)}
-                className="p-2 hover:bg-[#1e1f20] rounded-full text-[#c4c7c5] hover:text-white transition-colors"
-                title="Open sidebar"
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="p-2 hover:bg-[#1e1f20] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer"
+                title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
               >
                 <Menu size={20} />
               </button>
             )}
-            <div className="flex items-center gap-2.5">
-              <GeminiSparkle className="w-6 h-6" />
-              <span className="text-xl font-medium tracking-tight text-[#e3e3e3]">
+            <div className="flex items-center gap-2">
+              <GeminiSparkle className="w-5 h-5 sm:w-6 sm:h-6" />
+              <span className="text-lg sm:text-xl font-medium tracking-tight text-[#e3e3e3]">
                 Gabby
               </span>
-              <span className="text-xs text-[#8e918f] bg-[#1e1f20] px-2.5 py-0.5 rounded-full border border-white/5 ml-1 font-mono">
-                3.8 Flash
-              </span>
+              <button
+                type="button"
+                onClick={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
+                className="text-[11px] text-[#8e918f] hover:text-[#e3e3e3] bg-[#1e1f20] hover:bg-[#282a2c] px-2 sm:px-2.5 py-0.5 rounded-full border border-white/5 ml-1 font-mono flex items-center gap-1 transition-colors cursor-pointer"
+                title="Select Gemini Model"
+              >
+                <span>
+                  {selectedModel === 'fast'
+                    ? '3.5 Lite'
+                    : selectedModel === 'advanced'
+                    ? '3.7 Flash'
+                    : '3.8 Flash'}
+                </span>
+                <ChevronDown size={11} />
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             {/* Install Gabby PWA App Button */}
             {!isAppInstalled && (
               <button
                 type="button"
                 onClick={handleInstallApp}
-                className="px-3 py-1.5 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] border border-[#70CFFF]/40 hover:border-[#70CFFF]/70 text-[#70CFFF] hover:text-white text-xs font-medium flex items-center gap-1.5 transition-all shadow-sm group cursor-pointer"
+                className="p-2 sm:px-3 sm:py-1.5 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] border border-[#70CFFF]/40 hover:border-[#70CFFF]/70 text-[#70CFFF] hover:text-white text-xs font-medium flex items-center gap-1.5 transition-all shadow-sm group cursor-pointer"
                 title="Install Gabby as a standalone App"
               >
                 <Download size={14} className="text-[#70CFFF] group-hover:scale-110 transition-transform" />
@@ -1198,13 +1254,14 @@ function App() {
             <button
               type="button"
               onClick={() => setIsVoiceModeOpen(true)}
-              className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-[#4E80EE]/15 via-[#9B72CF]/15 to-[#E275AA]/15 hover:from-[#4E80EE]/25 hover:via-[#9B72CF]/25 hover:to-[#E275AA]/25 border border-[#4E80EE]/30 hover:border-[#9B72CF]/50 text-[#e3e3e3] text-xs font-medium flex items-center gap-1.5 transition-all shadow-sm group cursor-pointer"
+              className="px-2.5 sm:px-3.5 py-1.5 rounded-full bg-gradient-to-r from-[#4E80EE]/15 via-[#9B72CF]/15 to-[#E275AA]/15 hover:from-[#4E80EE]/25 hover:via-[#9B72CF]/25 hover:to-[#E275AA]/25 border border-[#4E80EE]/30 hover:border-[#9B72CF]/50 text-[#e3e3e3] text-xs font-medium flex items-center gap-1.5 transition-all shadow-sm group cursor-pointer"
               title="Start Live Voice Conversation"
             >
               <Mic size={14} className="text-[#70CFFF] group-hover:scale-110 transition-transform" />
-              <span>Voice Mode</span>
+              <span className="hidden xs:inline">Voice Mode</span>
+              <span className="xs:hidden">Voice</span>
             </button>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#4E80EE] via-[#9B72CF] to-[#E275AA] flex items-center justify-center text-sm font-semibold text-white shadow-md">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-[#4E80EE] via-[#9B72CF] to-[#E275AA] flex items-center justify-center text-xs sm:text-sm font-semibold text-white shadow-md">
               G
             </div>
           </div>
@@ -1213,20 +1270,20 @@ function App() {
         {/* Chat Area */}
         <div className="flex-1 overflow-y-auto scroll-smooth relative">
           {messages.length === 0 ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-4 sm:p-6 overflow-y-auto custom-scrollbar">
-              <div className="max-w-4xl w-full flex flex-col items-start space-y-8 animate-fade-in my-auto">
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-3 sm:p-6 overflow-y-auto custom-scrollbar">
+              <div className="max-w-4xl w-full flex flex-col items-start space-y-4 sm:space-y-6 md:space-y-8 animate-fade-in my-auto pb-24 sm:pb-28">
                 {/* Gemini Signature Heading */}
-                <div className="space-y-1 text-left px-2">
-                  <h1 className="text-4xl sm:text-5xl md:text-6xl font-medium tracking-tight bg-gradient-to-r from-[#4E80EE] via-[#9B72CF] to-[#E275AA] bg-clip-text text-transparent">
+                <div className="space-y-1 text-left px-1 sm:px-2">
+                  <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-medium tracking-tight bg-gradient-to-r from-[#4E80EE] via-[#9B72CF] to-[#E275AA] bg-clip-text text-transparent">
                     Hello, Gabriel
                   </h1>
-                  <h2 className="text-3xl sm:text-4xl md:text-5xl font-medium text-[#757775]">
+                  <h2 className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-medium text-[#757775]">
                     How can I help you today?
                   </h2>
                 </div>
 
-                {/* Gemini 4 Suggestion Cards in a Row / Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 w-full">
+                {/* Gemini 4 Suggestion Cards in a 2x2 grid on mobile, 4 in a row on desktop */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3.5 w-full">
                   <SuggestionCard
                     icon={FileText}
                     title="Help me write"
@@ -1251,7 +1308,7 @@ function App() {
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto w-full pb-36 pt-6 px-4 md:px-0">
+            <div className="max-w-3xl mx-auto w-full pb-32 sm:pb-36 pt-4 sm:pt-6 px-3 sm:px-6 md:px-0">
               {messages.map((msg, index) => (
                 <div
                   key={index}
@@ -1387,25 +1444,25 @@ function App() {
         </div>
 
         {/* Input Area (Gemini Floating Pill) */}
-        <div className={`absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#131314] via-[#131314]/95 to-transparent px-4 ${isMobile ? 'mobile-input-container pb-3' : 'pt-8 pb-5'}`}>
-          <div className="max-w-3xl mx-auto w-full relative">
-            <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[28px] border border-[#282a2c] focus-within:border-white/20 transition-all shadow-2xl">
-              <div className="flex items-end gap-2 px-4 py-2.5">
+        <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#131314] via-[#131314]/95 to-transparent px-2.5 sm:px-4 pt-4 sm:pt-8 pb-3 sm:pb-5 pointer-events-none">
+          <div className="max-w-3xl mx-auto w-full relative pointer-events-auto">
+            <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[24px] sm:rounded-[28px] border border-[#282a2c] focus-within:border-white/20 transition-all shadow-2xl">
+              <div className="flex items-end gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5">
                 {/* Plus button for attachments */}
                 <button
                   type="button"
                   onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
-                  className="p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors mb-0.5"
+                  className="p-1.5 sm:p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors mb-0.5 shrink-0 cursor-pointer"
                   title="Add attachment"
                 >
-                  <Plus size={20} />
+                  <Plus size={19} className="sm:w-5 sm:h-5" />
                 </button>
 
                 {/* Auto-expanding Input textarea */}
                 <textarea
                   rows={1}
                   placeholder="Ask Gabby..."
-                  className="flex-1 bg-transparent text-[#e3e3e3] focus:outline-none placeholder-[#8e918f] text-sm py-2 resize-none max-h-36 custom-scrollbar"
+                  className="flex-1 bg-transparent text-[#e3e3e3] focus:outline-none placeholder-[#8e918f] text-sm py-1.5 sm:py-2 resize-none max-h-36 custom-scrollbar min-w-0"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -1418,24 +1475,13 @@ function App() {
                 />
 
                 {/* Right side buttons */}
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  {/* Tools button */}
-                  <button
-                    type="button"
-                    onClick={() => setIsToolsOpen(!isToolsOpen)}
-                    className="px-2.5 py-1.5 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors flex items-center gap-1.5 text-xs font-medium"
-                    title="Tools"
-                  >
-                    <Zap size={14} className="text-[#4E80EE]" />
-                    <span className="hidden sm:inline">Tools</span>
-                  </button>
-
-                  {/* Model selector */}
-                  <div className="relative">
+                <div className="flex items-center gap-1 sm:gap-1.5 mb-0.5 shrink-0">
+                  {/* Model selector (visible on tablets/desktop, on mobile it's in the header) */}
+                  <div className="relative hidden sm:block">
                     <button
                       type="button"
                       onClick={() => setIsModelSelectorOpen(!isModelSelectorOpen)}
-                      className="px-2.5 py-1.5 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors flex items-center gap-1 text-xs font-medium bg-[#131314]/60 border border-white/5"
+                      className="px-2.5 py-1.5 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors flex items-center gap-1 text-xs font-medium bg-[#131314]/60 border border-white/5 cursor-pointer"
                       title="Select model"
                     >
                       <span className="text-[11px] font-medium">
@@ -1447,64 +1493,13 @@ function App() {
                       </span>
                       <ChevronDown size={13} />
                     </button>
-
-                    {/* Model selector dropdown */}
-                    {isModelSelectorOpen && (
-                      <div className="absolute bottom-full right-0 mb-2 w-64 bg-[#1e1f20] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 p-1.5 space-y-1">
-                        <button
-                          onClick={() => {
-                            setSelectedModel('standard');
-                            setIsModelSelectorOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
-                            selectedModel === 'standard' ? 'bg-[#4E80EE]/20 text-[#70CFFF] border border-[#4E80EE]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
-                          }`}
-                        >
-                          <div className="font-semibold text-xs flex items-center gap-1.5">
-                            <span>Gemini 3.8 Flash</span>
-                            <span className="text-[10px] bg-[#4E80EE]/20 text-[#70CFFF] px-1.5 py-0.5 rounded-full font-mono">⚡ Ultra Fast & Smart</span>
-                          </div>
-                          <div className="text-[11px] text-[#8e918f] mt-0.5">Top-speed 1.0s response & exceptional intelligence</div>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedModel('advanced');
-                            setIsModelSelectorOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
-                            selectedModel === 'advanced' ? 'bg-[#E275AA]/20 text-pink-300 border border-[#E275AA]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
-                          }`}
-                        >
-                          <div className="font-semibold text-xs flex items-center gap-1.5">
-                            <span>Gemini 3.7 Flash</span>
-                            <span className="text-[10px] bg-[#E275AA]/20 text-pink-300 px-1.5 py-0.5 rounded-full font-mono">🧠 Advanced</span>
-                          </div>
-                          <div className="text-[11px] text-[#8e918f] mt-0.5">Deep reasoning and complex queries</div>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedModel('fast');
-                            setIsModelSelectorOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
-                            selectedModel === 'fast' ? 'bg-[#9B72CF]/20 text-purple-300 border border-[#9B72CF]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
-                          }`}
-                        >
-                          <div className="font-semibold text-xs flex items-center gap-1.5">
-                            <span>Gemini 3.5 Flash Lite</span>
-                            <span className="text-[10px] bg-[#9B72CF]/20 text-purple-300 px-1.5 py-0.5 rounded-full font-mono">⚡ Instant Voice</span>
-                          </div>
-                          <div className="text-[11px] text-[#8e918f] mt-0.5">Sub-second immediate answers & instant voice</div>
-                        </button>
-                      </div>
-                    )}
                   </div>
 
-                  {/* Live Voice Button (Opens untouched VoiceModeModal) */}
+                  {/* Live Voice Button */}
                   <button
                     type="button"
                     onClick={() => setIsVoiceModeOpen(true)}
-                    className="p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center"
+                    className="p-1.5 sm:p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center cursor-pointer"
                     title="Start Live Voice Conversation"
                   >
                     <Mic size={18} />
@@ -1515,7 +1510,7 @@ function App() {
                     <button
                       type="button"
                       onClick={stopGeneration}
-                      className="p-2 bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all shadow-md flex items-center justify-center"
+                      className="p-1.5 sm:p-2 bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all shadow-md flex items-center justify-center cursor-pointer"
                       title="Stop generation"
                     >
                       <Square size={14} className="fill-current" />
@@ -1524,7 +1519,7 @@ function App() {
                     <button
                       type="submit"
                       disabled={!input.trim() || isLoading}
-                      className={`p-2 rounded-full transition-all flex items-center justify-center ${
+                      className={`p-1.5 sm:p-2 rounded-full transition-all flex items-center justify-center cursor-pointer ${
                         input.trim() && !isLoading
                           ? 'bg-white text-[#131314] hover:bg-gray-200 shadow-md scale-100 hover:scale-105 active:scale-95'
                           : 'bg-white/5 text-[#8e918f] cursor-not-allowed'
@@ -1537,11 +1532,70 @@ function App() {
                 </div>
               </div>
             </form>
-            <div className="text-center mt-2 flex items-center justify-center gap-2">
-              <p className="text-[11px] text-[#8e918f]">Gabby may display inaccurate info, including about people, so double-check its responses.</p>
+            <div className="text-center mt-1.5 sm:mt-2 flex items-center justify-center px-2">
+              <p className="text-[10px] sm:text-[11px] text-[#8e918f] truncate">Gabby may display inaccurate info, including about people, so double-check its responses.</p>
             </div>
           </div>
         </div>
+
+        {/* Global Model Selector Dropdown Modal (accessible on mobile from header and on desktop from input pill) */}
+        {isModelSelectorOpen && (
+          <div className="fixed inset-0 z-50 flex items-start sm:items-end justify-center sm:justify-end p-4 sm:p-20 bg-black/40 backdrop-blur-xs" onClick={() => setIsModelSelectorOpen(false)}>
+            <div
+              className="w-full max-w-xs bg-[#1e1f20] border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-2 space-y-1 animate-fade-in mt-14 sm:mt-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-3 py-1.5 text-xs font-semibold text-[#8e918f] border-b border-white/5">
+                Choose Gemini Model
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedModel('standard');
+                  setIsModelSelectorOpen(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
+                  selectedModel === 'standard' ? 'bg-[#4E80EE]/20 text-[#70CFFF] border border-[#4E80EE]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
+                }`}
+              >
+                <div className="font-semibold text-xs flex items-center gap-1.5">
+                  <span>Gemini 3.8 Flash</span>
+                  <span className="text-[10px] bg-[#4E80EE]/20 text-[#70CFFF] px-1.5 py-0.5 rounded-full font-mono">⚡ Ultra Fast</span>
+                </div>
+                <div className="text-[11px] text-[#8e918f] mt-0.5">Top-speed sub-second response & deep intelligence</div>
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedModel('advanced');
+                  setIsModelSelectorOpen(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
+                  selectedModel === 'advanced' ? 'bg-[#E275AA]/20 text-pink-300 border border-[#E275AA]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
+                }`}
+              >
+                <div className="font-semibold text-xs flex items-center gap-1.5">
+                  <span>Gemini 3.7 Flash</span>
+                  <span className="text-[10px] bg-[#E275AA]/20 text-pink-300 px-1.5 py-0.5 rounded-full font-mono">🧠 Advanced</span>
+                </div>
+                <div className="text-[11px] text-[#8e918f] mt-0.5">Deep reasoning and complex multimodal queries</div>
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedModel('fast');
+                  setIsModelSelectorOpen(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-xl transition-colors ${
+                  selectedModel === 'fast' ? 'bg-[#9B72CF]/20 text-purple-300 border border-[#9B72CF]/30' : 'text-[#c4c7c5] hover:bg-[#282a2c]'
+                }`}
+              >
+                <div className="font-semibold text-xs flex items-center gap-1.5">
+                  <span>Gemini 3.5 Flash Lite</span>
+                  <span className="text-[10px] bg-[#9B72CF]/20 text-purple-300 px-1.5 py-0.5 rounded-full font-mono">⚡ Instant Voice</span>
+                </div>
+                <div className="text-[11px] text-[#8e918f] mt-0.5">Sub-second immediate voice & quick replies</div>
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* My Stuff Panel */}

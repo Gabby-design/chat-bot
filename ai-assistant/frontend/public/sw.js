@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gabby-pwa-v1';
+const CACHE_NAME = 'gabby-pwa-v2';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -33,9 +33,14 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Only process standard http and https requests (ignore chrome-extension://, moz-extension://, etc.)
+  if (!event.request.url.startsWith('http://') && !event.request.url.startsWith('https://')) {
+    return;
+  }
+
   const url = new URL(event.request.url);
 
-  // Never cache API calls, SSE streams, or external endpoints
+  // Never cache API calls, SSE streams, or non-GET requests
   if (url.pathname.startsWith('/api') || event.request.method !== 'GET') {
     return;
   }
@@ -45,7 +50,7 @@ self.addEventListener('fetch', (event) => {
       if (cachedResponse) {
         // Fetch background update for cache (stale-while-revalidate)
         fetch(event.request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
+          if (networkResponse && networkResponse.status === 200 && event.request.url.startsWith('http')) {
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(event.request, networkResponse);
             });
@@ -59,10 +64,12 @@ self.addEventListener('fetch', (event) => {
           return networkResponse;
         }
 
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
+        if (event.request.url.startsWith('http')) {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
 
         return networkResponse;
       }).catch(() => {

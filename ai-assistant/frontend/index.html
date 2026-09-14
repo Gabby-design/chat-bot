@@ -19,6 +19,48 @@
   <title>Gabby - Your AI Assistant</title>
   <meta name="description"
     content="Experience the future of intelligent assistance with Gabby. Built for performance and style." />
+  <script>
+    // Automatic self-healing: detect stale cached bundles or MIME errors and refresh seamlessly
+    window.addEventListener('vite:preloadError', function () {
+      window.location.reload();
+    });
+    window.addEventListener('error', function (e) {
+      var msg = (e && e.message) || '';
+      var target = e && e.target;
+      var isModuleErr = (target && target.tagName === 'SCRIPT') ||
+        msg.indexOf('Failed to load module script') !== -1 ||
+        msg.indexOf('MIME type of "text/html"') !== -1 ||
+        msg.indexOf('Strict MIME type') !== -1;
+
+      if (isModuleErr) {
+        var storageKey = 'gabby_sw_heal_ts';
+        var lastHeal = sessionStorage.getItem(storageKey);
+        var now = Date.now();
+        if (!lastHeal || (now - parseInt(lastHeal, 10)) > 6000) {
+          sessionStorage.setItem(storageKey, String(now));
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+              for (var i = 0; i < regs.length; i++) {
+                regs[i].unregister();
+              }
+              if ('caches' in window) {
+                caches.keys().then(function (keys) {
+                  for (var j = 0; j < keys.length; j++) {
+                    caches.delete(keys[j]);
+                  }
+                  window.location.reload();
+                });
+              } else {
+                window.location.reload();
+              }
+            });
+          } else {
+            window.location.reload();
+          }
+        }
+      }
+    }, true);
+  </script>
 </head>
 
 <body>

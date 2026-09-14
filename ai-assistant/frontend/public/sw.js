@@ -1,14 +1,19 @@
-const CACHE_NAME = 'gabby-pwa-v3';
+const CACHE_NAME = 'gabby-pwa-v4';
 const STATIC_ASSETS = [
-  './',
-  './index.html',
-  './manifest.webmanifest',
-  './favicon.svg',
-  './favicon.ico',
-  './icon-192.png',
-  './icon-512.png',
-  './apple-touch-icon.png'
+  '/manifest.webmanifest',
+  '/favicon.svg',
+  '/favicon.ico',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/apple-touch-icon.png'
 ];
+
+// Listen for messages from client (e.g. skipWaiting)
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -24,6 +29,7 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames.map((cache) => {
           if (cache !== CACHE_NAME) {
+            console.log('Clearing old PWA cache:', cache);
             return caches.delete(cache);
           }
         })
@@ -33,7 +39,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only process standard http and https requests (ignore chrome-extension://, moz-extension://, etc.)
+  // Only process standard http and https requests
   if (!event.request.url.startsWith('http://') && !event.request.url.startsWith('https://')) {
     return;
   }
@@ -45,39 +51,75 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Fetch background update for cache (stale-while-revalidate)
-        fetch(event.request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200 && event.request.url.startsWith('http')) {
+  // 1. Navigation requests & HTML files -> ALWAYS Network-First!
+  // This ensures users always get the latest index.html pointing to fresh hashed JS/CSS bundles.
+  if (
+    event.request.mode === 'navigate' ||
+    event.request.destination === 'document' ||
+    url.pathname === '/' ||
+    url.pathname.endsWith('.html')
+  ) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const copy = networkResponse.clone();
             caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, networkResponse);
+              cache.put(event.request, copy);
             });
           }
-        }).catch(() => {});
-        return cachedResponse;
-      }
-
-      return fetch(event.request).then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
           return networkResponse;
+        })
+        .catch(() => {
+          // Offline fallback
+          return caches.match(event.request).then((cached) => {
+            return cached || caches.match('/index.html');
+          });
+        })
+    );
+    return;
+  }
+
+  // 2. Static bundled assets (/assets/...) -> Cache-First with validation
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
         }
 
-        if (event.request.url.startsWith('http')) {
-          const responseToCache = networkResponse.clone();
+        return fetch(event.request).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const contentType = networkResponse.headers.get('content-type') || '';
+            // Critical: Never cache HTML when expecting JS/CSS!
+            if (!contentType.includes('text/html')) {
+              const copy = networkResponse.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(event.request, copy);
+              });
+            }
+          }
+          return networkResponse;
+        });
+      })
+    );
+    return;
+  }
+
+  // 3. Other static assets (icons, manifest) -> Stale-While-Revalidate
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request).then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const copy = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
+            cache.put(event.request, copy);
           });
         }
-
         return networkResponse;
-      }).catch(() => {
-        // Fallback for navigation requests
-        if (event.request.mode === 'navigate') {
-          return caches.match('./index.html');
-        }
-      });
+      }).catch(() => null);
+
+      return cachedResponse || fetchPromise;
     })
   );
 });

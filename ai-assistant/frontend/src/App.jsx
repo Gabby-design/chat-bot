@@ -446,6 +446,7 @@ function App() {
   const [expandedThoughts, setExpandedThoughts] = useState(new Set());
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const chatContainerRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const toggleThink = () => {
     setIsThinkEnabled((prev) => {
@@ -1193,6 +1194,7 @@ function App() {
     };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setAttachedImage(null);
 
     let activeChatId = currentChatId;
@@ -1403,6 +1405,13 @@ function App() {
 
   const handleSuggestionClick = (suggestion) => {
     setInput(suggestion);
+    if (textareaRef.current) {
+      setTimeout(() => {
+        textareaRef.current?.focus();
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 144)}px`;
+      }, 0);
+    }
   };
 
   // Settings handlers
@@ -1494,24 +1503,25 @@ function App() {
   };
 
   // Authentic 4-point Google Gemini Sparkle Star SVG
-  const GeminiSparkle = ({ className = "w-5 h-5", animated = false }) => (
+  const GeminiSparkle = ({ className = "w-5 h-5", size, animated = false }) => (
     <svg
-      viewBox="0 0 28 28"
+      viewBox="0 0 296 298"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={`${className} ${animated ? 'gemini-sparkle-active' : ''}`}
+      style={size ? { width: size, height: size } : undefined}
     >
       <defs>
         <linearGradient id="gemini-sparkle-grad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#4E80EE" />
-          <stop offset="35%" stopColor="#70CFFF" />
-          <stop offset="70%" stopColor="#9B72CF" />
+          <stop offset="30%" stopColor="#70CFFF" />
+          <stop offset="65%" stopColor="#9B72CF" />
           <stop offset="100%" stopColor="#E275AA" />
         </linearGradient>
       </defs>
       <path
-        d="M14 0C14 7.732 7.732 14 0 14C7.732 14 14 20.268 14 28C14 20.268 20.268 14 28 14C20.268 14 14 7.732 14 0Z"
         fill="url(#gemini-sparkle-grad)"
+        d="M141.201 4.886c2.282-6.17 11.042-6.071 13.184.148l5.985 17.37a184.004 184.004 0 0 0 111.257 113.049l19.304 6.997c6.143 2.227 6.156 10.91.02 13.155l-19.35 7.082a184.001 184.001 0 0 0-109.495 109.385l-7.573 20.629c-2.241 6.105-10.869 6.121-13.133.025l-7.908-21.296a184 184 0 0 0-109.02-108.658l-19.698-7.239c-6.102-2.243-6.118-10.867-.025-13.132l20.083-7.467A183.998 183.998 0 0 0 133.291 26.28l7.91-21.394Z"
       />
     </svg>
   );
@@ -1910,7 +1920,10 @@ function App() {
             <div className="absolute inset-0 flex flex-col items-center justify-center p-3 sm:p-6 overflow-y-auto custom-scrollbar">
               <div className="max-w-4xl w-full flex flex-col items-start space-y-3 sm:space-y-6 md:space-y-8 animate-fade-in my-auto pb-20 sm:pb-28">
                 {/* Gemini Signature Heading */}
-                <div className="space-y-0.5 sm:space-y-1 text-left px-1 sm:px-2">
+                <div className="space-y-2 text-left px-1 sm:px-2">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-2xl bg-white/[0.04] border border-white/5 shadow-inner mb-1">
+                    <GeminiSparkle className="w-6 h-6 sm:w-8 sm:h-8" animated={true} />
+                  </div>
                   <h1 className="text-xl sm:text-3xl md:text-5xl lg:text-6xl font-medium tracking-tight bg-gradient-to-r from-[#4E80EE] via-[#9B72CF] to-[#E275AA] bg-clip-text text-transparent">
                     Hello, Gabriel
                   </h1>
@@ -1927,7 +1940,7 @@ function App() {
                     description="a professional thank-you email after a job interview"
                   />
                   <SuggestionCard
-                    icon={Sparkles}
+                    icon={GeminiSparkle}
                     title="Brainstorm ideas"
                     description="for a modern high-performance AI web application"
                   />
@@ -1945,227 +1958,216 @@ function App() {
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto w-full pb-32 sm:pb-36 pt-4 sm:pt-6 px-3 sm:px-6 md:px-0">
+            <div className="max-w-3xl mx-auto w-full pb-36 sm:pb-40 pt-3 sm:pt-6 px-3 sm:px-4 md:px-0">
               {messages.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`group flex gap-3.5 md:gap-4 mb-6 md:mb-8 transition-all ${
-                    msg.role === 'assistant' ? 'items-start' : 'items-start flex-row-reverse'
-                  }`}
-                >
-                  {/* Avatar */}
-                  <div className="relative shrink-0 mt-0.5">
-                    {msg.role === 'assistant' ? (
-                      <div className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center">
+                <div key={index} className="w-full mb-4 sm:mb-6 transition-all">
+                  {msg.role === 'user' ? (
+                    /* User Message Bubble (aligned right) */
+                    <div className="flex justify-end">
+                      <div className="max-w-[88%] sm:max-w-[78%] flex flex-col items-end group/user">
+                        {msg.image && (
+                          <div className="mb-2 max-w-sm rounded-2xl overflow-hidden border border-white/10 shadow-lg bg-black/40">
+                            <img
+                              src={msg.image}
+                              alt="User uploaded attachment"
+                              className="max-h-64 w-auto object-contain rounded-2xl"
+                            />
+                          </div>
+                        )}
+                        {editingIndex === index ? (
+                          /* Inline Edit Form */
+                          <div className="bg-[#1e1f20] border border-[#4E80EE]/50 rounded-2xl p-3 sm:p-3.5 shadow-xl text-left w-full">
+                            <textarea
+                              className="w-full bg-transparent text-[#e3e3e3] text-xs sm:text-sm focus:outline-none resize-none min-h-[60px] sm:min-h-[70px] placeholder-[#8e918f] font-sans"
+                              value={editingText}
+                              onChange={(e) => setEditingText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handleSaveAndSubmitEdit(index);
+                                }
+                              }}
+                              autoFocus
+                            />
+                            <div className="flex justify-end items-center gap-2 mt-2 pt-2 border-t border-white/10">
+                              <span className="text-[10px] sm:text-[11px] text-[#8e918f] mr-auto">Press Enter to save, Shift+Enter for newline</span>
+                              <button
+                                type="button"
+                                onClick={handleCancelEdit}
+                                className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-medium text-[#c4c7c5] hover:text-white hover:bg-white/10 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveAndSubmitEdit(index)}
+                                className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#4E80EE] to-[#9B72CF] hover:opacity-95 text-white font-semibold transition-all shadow flex items-center gap-1"
+                              >
+                                <Check size={13} />
+                                Save & Submit
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* Display User Bubble */
+                          <>
+                            {msg.content && (
+                              <div className="inline-block text-[11px] sm:text-[13px] md:text-[14px] leading-snug sm:leading-relaxed bg-[#282a2c] text-[#e3e3e3] rounded-2xl rounded-tr-sm px-3.5 py-2 sm:px-4 sm:py-2.5 border border-white/5 shadow-sm text-left">
+                                <p className="whitespace-pre-wrap">{msg.content}</p>
+                              </div>
+                            )}
+                            {/* User action buttons on hover */}
+                            <div className="opacity-0 group-hover/user:opacity-100 transition-opacity mt-1 flex items-center gap-1">
+                              <button
+                                onClick={() => handleStartEdit(index, msg.content)}
+                                className="flex items-center gap-1 text-[10px] sm:text-xs text-[#8e918f] hover:text-[#70CFFF] px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
+                                title="Edit message"
+                              >
+                                <Pencil size={11} className="sm:w-3 sm:h-3" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                onClick={() => copyToClipboard(msg.content, index)}
+                                className="text-[10px] sm:text-xs text-[#8e918f] hover:text-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
+                                title="Copy text"
+                              >
+                                <Copy size={11} className="sm:w-3 sm:h-3" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Assistant Message - Full width, flush, closing the gap to match Image 4 */
+                    <div className="w-full text-left space-y-1.5">
+                      {/* Compact flush header with authentic Gemini Sparkle icon */}
+                      <div className="flex items-center gap-1.5 mb-1 text-xs text-[#8a8a8e]">
                         <GeminiSparkle
-                          className="w-6 h-6 md:w-7 md:h-7"
+                          className="w-4 h-4 shrink-0"
                           animated={isLoading && !msg.content && index === messages.length - 1}
                         />
+                        <span className="text-[11px] sm:text-xs font-semibold text-[#c4c7c5]">Gabby</span>
                       </div>
-                    ) : (
-                      <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-[#282a2c] border border-white/5 flex items-center justify-center text-[#e3e3e3] shadow-sm">
-                        <User size={16} />
-                      </div>
-                    )}
-                  </div>
 
-                  {/* Message Content Container */}
-                  <div className={`flex-1 max-w-[88%] md:max-w-[82%] space-y-1.5 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                    {msg.role === 'user' ? (
-                      /* User Message Bubble */
-                      editingIndex === index ? (
-                        /* Inline Edit Form */
-                        <div className="bg-[#1e1f20] border border-[#4E80EE]/50 rounded-2xl p-3.5 shadow-xl text-left">
-                          <textarea
-                            className="w-full bg-transparent text-[#e3e3e3] text-xs sm:text-sm focus:outline-none resize-none min-h-[60px] sm:min-h-[70px] placeholder-[#8e918f] font-sans"
-                            value={editingText}
-                            onChange={(e) => setEditingText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSaveAndSubmitEdit(index);
-                              }
-                            }}
-                            autoFocus
-                          />
-                          <div className="flex justify-end items-center gap-2 mt-2 pt-2 border-t border-white/10">
-                            <span className="text-[10.5px] sm:text-[11px] text-[#8e918f] mr-auto">Press Enter to save, Shift+Enter for newline</span>
-                            <button
-                              type="button"
-                              onClick={handleCancelEdit}
-                              className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-medium text-[#c4c7c5] hover:text-white hover:bg-white/10 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleSaveAndSubmitEdit(index)}
-                              className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#4E80EE] to-[#9B72CF] hover:opacity-95 text-white font-semibold transition-all shadow flex items-center gap-1"
-                            >
-                              <Check size={13} />
-                              Save & Submit
-                            </button>
+                      {/* Live Searching Web status indicator */}
+                      {isSearchingWeb && index === messages.length - 1 && (
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1c1c1e] border border-white/10 text-[10px] sm:text-xs text-[#8a8a8e] animate-pulse">
+                          <Globe size={13} className="text-[#70CFFF] animate-spin" />
+                          <span>Searching the web...</span>
+                        </div>
+                      )}
+
+                      {/* Search Grounding Sources (if available) */}
+                      {msg.searchSources && msg.searchSources.length > 0 && (
+                        <div className="mb-2 space-y-1">
+                          <div className="flex items-center gap-1 text-[10px] sm:text-xs text-[#8a8a8e]">
+                            <Globe size={13} className="text-[#70CFFF]" />
+                            <span className="font-medium">Sources ({msg.searchSources.length})</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {msg.searchSources.map((source, sIdx) => (
+                              <a
+                                key={sIdx}
+                                href={source.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/10 text-[9.5px] sm:text-xs text-[#8a8a8e] hover:text-white transition-colors max-w-xs truncate"
+                                title={source.snippet || source.title}
+                              >
+                                <span className="w-3.5 h-3.5 rounded-full bg-white/10 flex items-center justify-center text-[9px] font-mono shrink-0">
+                                  {sIdx + 1}
+                                </span>
+                                <span className="truncate">{source.title || source.url}</span>
+                                <ExternalLink size={9} className="shrink-0 opacity-60" />
+                              </a>
+                            ))}
                           </div>
                         </div>
-                      ) : (
-                        /* Display User Bubble */
-                        <div className="inline-flex flex-col items-end group/user">
-                          {msg.image && (
-                            <div className="mb-2 max-w-sm rounded-2xl overflow-hidden border border-white/10 shadow-lg bg-black/40">
-                              <img
-                                src={msg.image}
-                                alt="User uploaded attachment"
-                                className="max-h-64 w-auto object-contain rounded-2xl"
-                              />
-                            </div>
-                          )}
-                          {msg.content && (
-                            <div className="inline-block text-[11px] sm:text-[13.5px] md:text-[14.5px] leading-snug sm:leading-relaxed bg-[#282a2c] text-[#e3e3e3] rounded-2xl sm:rounded-3xl rounded-tr-sm px-3 py-1.5 sm:px-4 sm:py-2.5 border border-white/5 shadow-sm">
-                              <p className="whitespace-pre-wrap text-left">{msg.content}</p>
-                            </div>
-                          )}
-                          {/* User action buttons on hover */}
-                          <div className="opacity-0 group-hover/user:opacity-100 transition-opacity mt-1 flex items-center gap-1">
-                            <button
-                              onClick={() => handleStartEdit(index, msg.content)}
-                              className="flex items-center gap-1 text-[10px] sm:text-xs text-[#8e918f] hover:text-[#70CFFF] px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
-                              title="Edit message"
-                            >
-                              <Pencil size={11} className="sm:w-3 sm:h-3" />
-                              <span>Edit</span>
-                            </button>
-                            <button
-                              onClick={() => copyToClipboard(msg.content, index)}
-                              className="text-[10px] sm:text-xs text-[#8e918f] hover:text-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
-                              title="Copy text"
-                            >
-                              <Copy size={11} className="sm:w-3 sm:h-3" />
-                            </button>
+                      )}
+
+                      {/* Live Thinking Block (while reasoning pass is running) */}
+                      {msg.isThinking && (
+                        <div className="mb-2 rounded-xl bg-[#1c1c1e]/60 border border-white/10 p-2 sm:p-2.5 text-[10px] sm:text-xs">
+                          <div className="flex items-center gap-1.5 font-medium text-[#c4c7c5] mb-1 text-[10px] sm:text-xs">
+                            <Brain size={14} className="text-[#9B72CF] animate-pulse" />
+                            <span>Thinking... {thinkingSeconds}s</span>
                           </div>
+                          {msg.reasoning && (
+                            <div className="border-l-2 border-white/20 pl-2.5 py-0.5 font-mono text-[10px] sm:text-[11.5px] leading-relaxed whitespace-pre-wrap text-[#8a8a8e]">
+                              {msg.reasoning}
+                              <span className="inline-block w-1 h-3 ml-1 bg-[#9B72CF] animate-pulse align-middle" />
+                            </div>
+                          )}
                         </div>
-                      )
-                    ) : (
-                      /* Assistant Message */
-                      <div className="text-left space-y-2">
-                        {/* Live Searching Web status indicator */}
-                        {isSearchingWeb && index === messages.length - 1 && (
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1c1c1e] border border-white/10 text-[10px] sm:text-xs text-[#8a8a8e] animate-pulse">
-                            <Globe size={13} className="text-[#70CFFF] animate-spin" />
-                            <span>Searching the web...</span>
-                          </div>
-                        )}
+                      )}
 
-                        {/* Search Grounding Sources (if available) */}
-                        {msg.searchSources && msg.searchSources.length > 0 && (
-                          <div className="mb-2 space-y-1">
-                            <div className="flex items-center gap-1 text-[10px] sm:text-xs text-[#8a8a8e]">
-                              <Globe size={13} className="text-[#70CFFF]" />
-                              <span className="font-medium">Sources ({msg.searchSources.length})</span>
+                      {/* Collapsed Thought Block (after reasoning pass is complete) */}
+                      {!msg.isThinking && msg.reasoning && (
+                        <div className="mb-2 rounded-xl bg-[#1c1c1e]/40 border border-white/10 overflow-hidden text-[10px] sm:text-xs">
+                          <button
+                            type="button"
+                            onClick={() => toggleThoughtExpanded(index)}
+                            className="w-full flex items-center justify-between px-2.5 py-1.5 text-[#8a8a8e] hover:text-[#e8e8e8] hover:bg-white/[0.03] transition-colors cursor-pointer text-left"
+                          >
+                            <div className="flex items-center gap-1.5 font-medium text-[10px] sm:text-xs">
+                              <Brain size={14} className="text-[#9B72CF]" />
+                              <span>Thought for {msg.thoughtTime || 4} seconds</span>
                             </div>
-                            <div className="flex flex-wrap gap-1">
-                              {msg.searchSources.map((source, sIdx) => (
-                                <a
-                                  key={sIdx}
-                                  href={source.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/10 text-[9.5px] sm:text-xs text-[#8a8a8e] hover:text-white transition-colors max-w-xs truncate"
-                                  title={source.snippet || source.title}
-                                >
-                                  <span className="w-3.5 h-3.5 rounded-full bg-white/10 flex items-center justify-center text-[9px] font-mono shrink-0">
-                                    {sIdx + 1}
-                                  </span>
-                                  <span className="truncate">{source.title || source.url}</span>
-                                  <ExternalLink size={9} className="shrink-0 opacity-60" />
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Live Thinking Block (while reasoning pass is running) */}
-                        {msg.isThinking && (
-                          <div className="mb-2 rounded-xl bg-[#1c1c1e]/60 border border-white/10 p-2 sm:p-2.5 text-[10px] sm:text-xs">
-                            <div className="flex items-center gap-1.5 font-medium text-[#c4c7c5] mb-1 text-[10px] sm:text-xs">
-                              <Brain size={14} className="text-[#9B72CF] animate-pulse" />
-                              <span>Thinking... {thinkingSeconds}s</span>
-                            </div>
-                            {msg.reasoning && (
+                            {expandedThoughts.has(index) ? (
+                              <ChevronDown size={14} />
+                            ) : (
+                              <ChevronRight size={14} />
+                            )}
+                          </button>
+                          {expandedThoughts.has(index) && (
+                            <div className="px-2.5 pb-2.5 pt-1 border-t border-white/5">
                               <div className="border-l-2 border-white/20 pl-2.5 py-0.5 font-mono text-[10px] sm:text-[11.5px] leading-relaxed whitespace-pre-wrap text-[#8a8a8e]">
                                 {msg.reasoning}
-                                <span className="inline-block w-1 h-3 ml-1 bg-[#9B72CF] animate-pulse align-middle" />
                               </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Collapsed Thought Block (after reasoning pass is complete) */}
-                        {!msg.isThinking && msg.reasoning && (
-                          <div className="mb-2 rounded-xl bg-[#1c1c1e]/40 border border-white/10 overflow-hidden text-[10px] sm:text-xs">
-                            <button
-                              type="button"
-                              onClick={() => toggleThoughtExpanded(index)}
-                              className="w-full flex items-center justify-between px-2.5 py-1.5 text-[#8a8a8e] hover:text-[#e8e8e8] hover:bg-white/[0.03] transition-colors cursor-pointer text-left"
-                            >
-                              <div className="flex items-center gap-1.5 font-medium text-[10px] sm:text-xs">
-                                <Brain size={14} className="text-[#9B72CF]" />
-                                <span>Thought for {msg.thoughtTime || 4} seconds</span>
-                              </div>
-                              {expandedThoughts.has(index) ? (
-                                <ChevronDown size={14} />
-                              ) : (
-                                <ChevronRight size={14} />
-                              )}
-                            </button>
-                            {expandedThoughts.has(index) && (
-                              <div className="px-2.5 pb-2.5 pt-1 border-t border-white/5">
-                                <div className="border-l-2 border-white/20 pl-2.5 py-0.5 font-mono text-[10px] sm:text-[11.5px] leading-relaxed whitespace-pre-wrap text-[#8a8a8e]">
-                                  {msg.reasoning}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Final Answer Prose Content */}
-                        <div className="prose-chat text-[#e8e8e8] leading-relaxed">
-                          {msg.content ? (
-                            <>
-                              <ReactMarkdown
-                                remarkPlugins={[remarkGfm]}
-                                components={{
-                                  table: ({ children }) => <TableBlock>{children}</TableBlock>,
-                                  pre: ({ children }) => <>{children}</>,
-                                  code({ node, inline, className, children, ...props }) {
-                                    return !inline ? (
-                                      <CodeBlock className={className} {...props}>
-                                        {children}
-                                      </CodeBlock>
-                                    ) : (
-                                      <code className="bg-[#282a2c] px-1.5 py-0.5 rounded-md text-xs sm:text-sm font-mono text-[#70CFFF]" {...props}>
-                                        {children}
-                                      </code>
-                                    );
-                                  }
-                                }}
-                              >
-                                {msg.content}
-                              </ReactMarkdown>
-                              {isStreaming && index === messages.length - 1 && !msg.isThinking && (
-                                <span className="streaming-cursor" title="Streaming..." />
-                              )}
-                            </>
-                          ) : (
-                            /* Shimmer Animation only when not thinking */
-                            !msg.isThinking && <GeminiThinkingAnimation />
+                            </div>
                           )}
                         </div>
+                      )}
 
-                        {/* Action buttons (Copy, Listen/TTS, Thumbs Up/Down, Regenerate) */}
-                        {msg.content && renderMessageActions(msg, index)}
+                      {/* Final Answer Prose Content - 100% full width, flush! */}
+                      <div className="prose-chat text-[#e8e8e8] leading-relaxed w-full">
+                        {msg.content ? (
+                          <>
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                table: ({ children }) => <TableBlock>{children}</TableBlock>,
+                                pre: ({ children }) => <>{children}</>,
+                                code({ node, inline, className, children, ...props }) {
+                                  return !inline ? (
+                                    <CodeBlock className={className} {...props}>
+                                      {children}
+                                    </CodeBlock>
+                                  ) : (
+                                    <code className="bg-[#282a2c] px-1.5 py-0.5 rounded-md text-xs sm:text-sm font-mono text-[#70CFFF]" {...props}>
+                                      {children}
+                                    </code>
+                                  );
+                                }
+                              }}
+                            >
+                              {msg.content}
+                            </ReactMarkdown>
+                            {isStreaming && index === messages.length - 1 && !msg.isThinking && (
+                              <span className="streaming-cursor" title="Streaming..." />
+                            )}
+                          </>
+                        ) : (
+                          /* Shimmer Animation only when not thinking */
+                          !msg.isThinking && <GeminiThinkingAnimation />
+                        )}
                       </div>
-                    )}
-                  </div>
+
+                      {/* Action buttons (Copy, Listen/TTS, Thumbs Up/Down, Regenerate) */}
+                      {msg.content && renderMessageActions(msg, index)}
+                    </div>
+                  )}
                 </div>
               ))}
               <div ref={messagesEndRef} />
@@ -2204,9 +2206,9 @@ function App() {
               className="hidden"
             />
 
-            <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[20px] sm:rounded-[24px] border border-white/10 focus-within:border-white/25 transition-all shadow-2xl overflow-hidden">
+            <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[22px] sm:rounded-[26px] border border-white/10 focus-within:border-white/25 transition-all shadow-2xl p-2.5 sm:p-3">
               {attachedImage && (
-                <div className="px-3 py-1.5 flex items-center gap-2 border-b border-white/5 bg-white/[0.02]">
+                <div className="mb-2 pb-2 flex items-center gap-2 border-b border-white/5 bg-white/[0.02] rounded-lg p-1.5">
                   <div className="relative group shrink-0">
                     <img
                       src={attachedImage.dataUrl}
@@ -2229,56 +2231,19 @@ function App() {
                 </div>
               )}
 
-              <div className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5">
-                {/* Circular Plus button for attachments */}
-                <button
-                  type="button"
-                  onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
-                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/5 hover:bg-white/10 text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center shrink-0 cursor-pointer border border-white/5"
-                  title="Add attachment"
-                >
-                  <Plus size={16} />
-                </button>
-
-                {/* Redesigned Mini Think Button on the search bar */}
-                <button
-                  type="button"
-                  onClick={toggleThink}
-                  className={`inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium transition-all shrink-0 cursor-pointer border ${
-                    isThinkEnabled
-                      ? 'bg-[#9B72CF]/25 text-[#D8B4FE] border-[#9B72CF]/60 shadow-[0_0_8px_rgba(155,114,207,0.3)]'
-                      : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
-                  }`}
-                  title="Toggle Reasoning Pass (Think)"
-                >
-                  <Brain size={12} className={isThinkEnabled ? 'text-[#D8B4FE]' : 'text-[#8a8a8e]'} />
-                  <span>Think</span>
-                  {isThinkEnabled && <span className="w-1 h-1 rounded-full bg-[#D8B4FE] animate-pulse" />}
-                </button>
-
-                {/* Redesigned Mini Search Button on the search bar */}
-                <button
-                  type="button"
-                  onClick={toggleSearch}
-                  className={`inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium transition-all shrink-0 cursor-pointer border ${
-                    isSearchEnabled
-                      ? 'bg-[#4E80EE]/25 text-[#70CFFF] border-[#4E80EE]/60 shadow-[0_0_8px_rgba(78,128,238,0.3)]'
-                      : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
-                  }`}
-                  title="Toggle Web Search Grounding"
-                >
-                  <Globe size={12} className={isSearchEnabled ? 'text-[#70CFFF]' : 'text-[#8a8a8e]'} />
-                  <span>Search</span>
-                  {isSearchEnabled && <span className="w-1 h-1 rounded-full bg-[#70CFFF] animate-pulse" />}
-                </button>
-
-                {/* Auto-expanding Input textarea */}
+              {/* Row 1 (Top): Full-width Auto-expanding Input Textarea */}
+              <div className="w-full px-1">
                 <textarea
+                  ref={textareaRef}
                   rows={1}
                   placeholder="Type a message or hold to speak"
-                  className="flex-1 bg-transparent text-[#e8e8e8] focus:outline-none placeholder-[#8a8a8e] text-[11px] sm:text-sm px-1 py-1 resize-none max-h-32 custom-scrollbar min-w-0 leading-tight"
+                  className="w-full bg-transparent text-[#e8e8e8] focus:outline-none placeholder-[#8a8a8e] text-[12px] sm:text-sm resize-none min-h-[36px] max-h-36 custom-scrollbar leading-relaxed"
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 144)}px`;
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -2287,20 +2252,58 @@ function App() {
                   }}
                   disabled={isLoading && !isStreaming}
                 />
+              </div>
 
-                {/* Right side buttons */}
-                <div className="flex items-center gap-1 shrink-0">
-                  {/* Circular Voice Button */}
+              {/* Row 2 (Bottom): Left has [Think] [Search] pills; Right has (+) and (Mic)/(Send) circular buttons */}
+              <div className="flex items-center justify-between pt-1 mt-0.5 px-0.5">
+                {/* Left group: Think and Search pills */}
+                <div className="flex items-center gap-1.5">
+                  {/* Redesigned DeepSeek-style Think Button */}
                   <button
                     type="button"
-                    onClick={() => setIsVoiceModeOpen(true)}
-                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/5 hover:bg-white/10 text-[#c4c7c5] hover:text-white transition-colors flex items-center justify-center cursor-pointer border border-white/5"
-                    title="Start Live Voice Conversation"
+                    onClick={toggleThink}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-medium transition-all shrink-0 cursor-pointer border ${
+                      isThinkEnabled
+                        ? 'bg-[#9B72CF]/20 text-[#D8B4FE] border-[#9B72CF]/50 shadow-[0_0_8px_rgba(155,114,207,0.25)]'
+                        : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
+                    }`}
+                    title="Toggle Reasoning Pass (Think)"
                   >
-                    <Mic size={15} />
+                    <Brain size={13} className={isThinkEnabled ? 'text-[#D8B4FE]' : 'text-[#8a8a8e]'} />
+                    <span>Think</span>
+                    {isThinkEnabled && <span className="w-1 h-1 rounded-full bg-[#D8B4FE] animate-pulse" />}
                   </button>
 
-                  {/* Circular Send or Stop button */}
+                  {/* Redesigned DeepSeek-style Search Button */}
+                  <button
+                    type="button"
+                    onClick={toggleSearch}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-medium transition-all shrink-0 cursor-pointer border ${
+                      isSearchEnabled
+                        ? 'bg-[#4E80EE]/20 text-[#70CFFF] border-[#4E80EE]/50 shadow-[0_0_8px_rgba(78,128,238,0.25)]'
+                        : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
+                    }`}
+                    title="Toggle Web Search Grounding"
+                  >
+                    <Globe size={13} className={isSearchEnabled ? 'text-[#70CFFF]' : 'text-[#8a8a8e]'} />
+                    <span>Search</span>
+                    {isSearchEnabled && <span className="w-1 h-1 rounded-full bg-[#70CFFF] animate-pulse" />}
+                  </button>
+                </div>
+
+                {/* Right group: Circular Plus attachment and Circular Mic / Send / Stop */}
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  {/* Circular Plus button for attachments */}
+                  <button
+                    type="button"
+                    onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-white/15 hover:border-white/30 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer"
+                    title="Add attachment"
+                  >
+                    <Plus size={16} />
+                  </button>
+
+                  {/* Circular Send or Mic or Stop */}
                   {isStreaming ? (
                     <button
                       type="button"
@@ -2310,18 +2313,23 @@ function App() {
                     >
                       <Square size={11} className="fill-current sm:w-3 sm:h-3" />
                     </button>
-                  ) : (
+                  ) : (input.trim() || attachedImage) ? (
                     <button
                       type="submit"
-                      disabled={(!input.trim() && !attachedImage) || isLoading}
-                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full transition-all flex items-center justify-center cursor-pointer ${
-                        (input.trim() || attachedImage) && !isLoading
-                          ? 'bg-white text-[#131314] hover:bg-gray-200 shadow-md scale-100 hover:scale-105 active:scale-95'
-                          : 'bg-white/5 text-[#8a8a8e] cursor-not-allowed'
-                      }`}
+                      disabled={isLoading}
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white text-[#131314] hover:bg-gray-200 shadow-md flex items-center justify-center cursor-pointer transition-all scale-100 hover:scale-105 active:scale-95"
                       title="Send message"
                     >
-                      <Send size={13} />
+                      <Send size={13} className="ml-0.5 text-[#131314]" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsVoiceModeOpen(true)}
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-white/15 hover:border-white/30 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer"
+                      title="Start Live Voice Conversation"
+                    >
+                      <Mic size={15} />
                     </button>
                   )}
                 </div>
@@ -2640,8 +2648,8 @@ function App() {
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center shrink-0">
-                    <Sparkles size={20} className="text-white" />
+                  <div className="w-10 h-10 rounded-full bg-[#1e1f20] border border-orange-500/40 flex items-center justify-center shrink-0">
+                    <GeminiSparkle className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
@@ -3080,7 +3088,7 @@ function App() {
       {isAttachmentOpen && (
         <div className="fixed inset-0 z-40" onClick={() => setIsAttachmentOpen(false)}>
           <div
-            className="absolute bottom-24 left-4 sm:left-8 w-64 bg-[#1e1f20] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-fade-in"
+            className="absolute bottom-24 right-4 sm:right-16 w-64 bg-[#1e1f20] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-fade-in"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-2 space-y-1">

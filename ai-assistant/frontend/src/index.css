@@ -901,104 +901,155 @@ body {
   }
 }
 
-/* Image Attachment Preview Corner Close Button */
-.attachment-close-btn {
+/* Uploaded Image Preview & Corner Cancel Button */
+.image-preview {
+  position: relative;
+  display: inline-block;
+}
+
+.image-preview img {
+  display: block;
+  border-radius: 12px;
+}
+
+.image-preview .cancel-btn {
   position: absolute;
-  top: -6px;
-  right: -6px;
-  width: 22px;
-  height: 22px;
-  background-color: rgba(19, 19, 20, 0.88);
-  color: #ffffff;
-  border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  top: -8px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  border: none;
   cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  color: #ffffff;
   transition: background-color 0.2s, transform 0.15s;
   z-index: 20;
 }
 
-.attachment-close-btn:hover {
-  background-color: #dc2626;
-  border-color: rgba(255, 255, 255, 0.45);
+.image-preview .cancel-btn:hover {
+  background: rgba(220, 38, 38, 0.95);
+  transform: scale(1.08);
 }
 
-/* Invisible pseudo-element expands the hit area to 40px while visually staying 22px */
+/* 40px minimum touch target via pseudo-element padding */
+.image-preview .cancel-btn::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  left: -8px;
+  right: -8px;
+  border-radius: 50%;
+}
+
+/* Backward compatibility alias for any existing reference */
+.attachment-close-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  color: #ffffff;
+  z-index: 20;
+}
 .attachment-close-btn::before {
   content: '';
   position: absolute;
-  top: -9px;
-  bottom: -9px;
-  left: -9px;
-  right: -9px;
-  border-radius: 9999px;
+  top: -8px;
+  bottom: -8px;
+  left: -8px;
+  right: -8px;
+  border-radius: 50%;
 }
 
-/* Gemini Live & Siri Style Voice Orb Animations */
+/* ChatGPT-Style Fluid Living Voice Orb */
+.voice-orb-container {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  --level: 0;
+  transform: scale(calc(1 + var(--level, 0) * 0.32)) translateZ(0);
+  filter: brightness(calc(1 + var(--level, 0) * 0.55)) drop-shadow(0 0 calc(18px + var(--level, 0) * 45px) rgba(56, 189, 248, calc(0.35 + var(--level, 0) * 0.55)));
+  transition: transform 0.08s ease-out, filter 0.08s ease-out;
+  will-change: transform, filter;
+}
+
+.voice-orb {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #7dd3fc, #3b82f6 45%, #1e3a8a 100%);
+  filter: blur(1.5px);
+  animation: orb-breathe 3s ease-in-out infinite;
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.voice-orb::before,
+.voice-orb::after {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(147, 197, 253, 0.55), transparent 60%);
+  filter: blur(14px);
+  animation: orb-swirl 7s linear infinite;
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.voice-orb::after {
+  animation-direction: reverse;
+  animation-duration: 9s;
+  opacity: 0.6;
+}
+
 @keyframes orb-breathe {
   0%, 100% {
-    transform: scale(0.95);
-    filter: drop-shadow(0 0 35px rgba(56, 189, 248, 0.45)) drop-shadow(0 0 65px rgba(129, 140, 248, 0.25));
+    transform: scale(1) translateZ(0);
   }
   50% {
-    transform: scale(1.06);
-    filter: drop-shadow(0 0 55px rgba(56, 189, 248, 0.75)) drop-shadow(0 0 95px rgba(168, 85, 247, 0.4));
+    transform: scale(1.08) translateZ(0);
   }
 }
 
-@keyframes orb-speaking {
-  0%, 100% {
-    transform: scale(0.98);
-    filter: drop-shadow(0 0 45px rgba(6, 182, 212, 0.6)) drop-shadow(0 0 85px rgba(168, 85, 247, 0.4));
-  }
-  30% {
-    transform: scale(1.14);
-    filter: drop-shadow(0 0 75px rgba(6, 182, 212, 0.9)) drop-shadow(0 0 120px rgba(59, 130, 246, 0.65));
-  }
-  70% {
-    transform: scale(1.05);
-    filter: drop-shadow(0 0 60px rgba(168, 85, 247, 0.8)) drop-shadow(0 0 95px rgba(236, 72, 153, 0.5));
+@keyframes orb-swirl {
+  to {
+    transform: rotate(360deg) translateZ(0);
   }
 }
 
-@keyframes orb-spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-@keyframes orb-spin-reverse {
-  from { transform: rotate(360deg); }
-  to { transform: rotate(0deg); }
-}
-
-@keyframes orb-wave-ripple {
-  0% {
-    transform: scale(0.85);
-    opacity: 0.75;
+/* Fallback for users with reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .voice-orb {
+    animation: none;
+    transform: scale(1) translateZ(0);
   }
-  100% {
-    transform: scale(1.85);
-    opacity: 0;
+  .voice-orb::before,
+  .voice-orb::after {
+    animation: none;
+    transform: none;
   }
-}
-
-.voice-orb-breathe {
-  animation: orb-breathe 4s ease-in-out infinite;
-}
-
-.voice-orb-speaking {
-  animation: orb-speaking 1.25s ease-in-out infinite;
-}
-
-.voice-orb-ripple {
-  animation: orb-wave-ripple 2.8s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
-}
-
-.voice-orb-ripple-delayed {
-  animation: orb-wave-ripple 2.8s cubic-bezier(0.1, 0.8, 0.3, 1) infinite 1.4s;
+  .voice-orb-container {
+    transition: none;
+  }
 }
 
 /* Fluid Live Equalizer Wave */
@@ -1019,76 +1070,6 @@ body {
 .live-eq-bar:nth-child(4) { animation-delay: 0.45s; }
 .live-eq-bar:nth-child(5) { animation-delay: 0.25s; }
 
-/* ChatGPT-Style Fluid Living Orb */
-@keyframes chatgpt-orb-morph {
-  0% {
-    border-radius: 42% 58% 70% 30% / 45% 45% 55% 55%;
-    transform: rotate(0deg) scale(1);
-  }
-  25% {
-    border-radius: 58% 42% 40% 60% / 55% 65% 35% 45%;
-    transform: rotate(90deg) scale(1.02);
-  }
-  50% {
-    border-radius: 70% 30% 46% 54% / 30% 29% 71% 70%;
-    transform: rotate(180deg) scale(0.98);
-  }
-  75% {
-    border-radius: 50% 50% 34% 66% / 56% 68% 32% 44%;
-    transform: rotate(270deg) scale(1.02);
-  }
-  100% {
-    border-radius: 42% 58% 70% 30% / 45% 45% 55% 55%;
-    transform: rotate(360deg) scale(1);
-  }
-}
-
-@keyframes chatgpt-orb-speaking-morph {
-  0% {
-    border-radius: 40% 60% 65% 35% / 40% 45% 55% 60%;
-    transform: rotate(0deg) scale(1.04);
-    filter: drop-shadow(0 0 50px rgba(56, 189, 248, 0.75)) drop-shadow(0 0 90px rgba(129, 140, 248, 0.55));
-  }
-  25% {
-    border-radius: 65% 35% 40% 60% / 60% 55% 45% 40%;
-    transform: rotate(90deg) scale(1.10);
-    filter: drop-shadow(0 0 65px rgba(14, 165, 233, 0.85)) drop-shadow(0 0 110px rgba(168, 85, 247, 0.65));
-  }
-  50% {
-    border-radius: 35% 65% 55% 45% / 45% 40% 60% 55%;
-    transform: rotate(180deg) scale(1.05);
-    filter: drop-shadow(0 0 55px rgba(56, 189, 248, 0.8)) drop-shadow(0 0 95px rgba(99, 102, 241, 0.6));
-  }
-  75% {
-    border-radius: 60% 40% 35% 65% / 55% 60% 40% 45%;
-    transform: rotate(270deg) scale(1.12);
-    filter: drop-shadow(0 0 70px rgba(14, 165, 233, 0.9)) drop-shadow(0 0 120px rgba(168, 85, 247, 0.7));
-  }
-  100% {
-    border-radius: 40% 60% 65% 35% / 40% 45% 55% 60%;
-    transform: rotate(360deg) scale(1.04);
-    filter: drop-shadow(0 0 50px rgba(56, 189, 248, 0.75)) drop-shadow(0 0 90px rgba(129, 140, 248, 0.55));
-  }
-}
-
-.chatgpt-orb {
-  animation: chatgpt-orb-morph 6s ease-in-out infinite;
-  background: radial-gradient(circle at 36% 32%, #ffffff 0%, #e0f2fe 22%, #7dd3fc 45%, #38bdf8 70%, #2563eb 96%);
-  box-shadow: 0 0 35px rgba(56, 189, 248, 0.55), 0 0 70px rgba(59, 130, 246, 0.35), inset 0 0 25px rgba(255, 255, 255, 0.8);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.chatgpt-orb-speaking {
-  animation: chatgpt-orb-speaking-morph 2s ease-in-out infinite;
-  background: radial-gradient(circle at 32% 30%, #ffffff 0%, #f0fdfa 18%, #38bdf8 42%, #818cf8 70%, #6366f1 96%);
-  box-shadow: 0 0 50px rgba(56, 189, 248, 0.8), 0 0 95px rgba(99, 102, 241, 0.5), inset 0 0 30px rgba(255, 255, 255, 0.9);
-}
-
-.chatgpt-orb-thinking {
-  animation: chatgpt-orb-morph 3s ease-in-out infinite;
-  background: radial-gradient(circle at 35% 32%, #ffffff 0%, #ede9fe 25%, #a78bfa 55%, #6366f1 85%);
-  box-shadow: 0 0 40px rgba(167, 139, 250, 0.7), 0 0 80px rgba(99, 102, 241, 0.4);
-}
 
 
 

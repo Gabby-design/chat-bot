@@ -2245,21 +2245,21 @@ function App() {
 
             <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[22px] sm:rounded-[26px] border border-white/10 focus-within:border-white/25 transition-all shadow-2xl p-2.5 sm:p-3">
               {attachedImage && (
-                <div className="mb-2 pb-2 flex items-center gap-2 border-b border-white/5 bg-white/[0.02] rounded-lg p-1.5">
-                  <div className="relative group shrink-0">
+                <div className="mb-2 pb-2 pt-1 flex items-center gap-3 border-b border-white/5 bg-white/[0.02] rounded-xl px-2.5 py-1.5">
+                  <div className="image-preview relative inline-block shrink-0 mt-1 mr-1">
                     <img
                       src={attachedImage.dataUrl}
                       alt="Attachment preview"
-                      className="h-11 w-11 object-cover rounded-lg border border-white/10 shadow"
+                      className="h-12 w-12 object-cover rounded-[12px] border border-white/10 shadow"
                     />
                     <button
                       type="button"
                       onClick={() => setAttachedImage(null)}
-                      className="attachment-close-btn"
+                      className="cancel-btn touch-manipulation"
                       title="Remove image"
                       aria-label="Remove image attachment"
                     >
-                      <X size={13} />
+                      <X size={13} className="text-white stroke-[2.5]" />
                     </button>
                   </div>
                   <div className="text-[10px] sm:text-xs min-w-0 flex-1">

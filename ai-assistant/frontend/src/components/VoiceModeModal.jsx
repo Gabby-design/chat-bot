@@ -30,6 +30,151 @@ export default function VoiceModeModal({
   const messagesEndRef = useRef(null);
   const activeAudioRef = useRef(null);
   const voiceStateRef = useRef('listening');
+  const isMutedRef = useRef(false);
+
+  // Web Audio API & Analyser refs for real-time reactivity
+  const audioContextRef = useRef(null);
+  const micStreamRef = useRef(null);
+  const micSourceRef = useRef(null);
+  const micAnalyserRef = useRef(null);
+  const ttsAudioRef = useRef(null);
+  const ttsSourceRef = useRef(null);
+  const ttsAnalyserRef = useRef(null);
+  const orbRef = useRef(null);
+  const animFrameRef = useRef(null);
+  const currentLevelRef = useRef(0);
+
+  const initAudioContext = () => {
+    try {
+      if (!audioContextRef.current) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          audioContextRef.current = new AudioContextClass();
+        }
+      }
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
+    } catch (e) {
+      console.warn('[Voice Mode] AudioContext init error:', e);
+    }
+  };
+
+  const setupTtsAudio = () => {
+    if (!ttsAudioRef.current) {
+      const audio = new Audio();
+      audio.crossOrigin = 'anonymous';
+      ttsAudioRef.current = audio;
+    }
+
+    initAudioContext();
+    if (audioContextRef.current && ttsAudioRef.current && !ttsSourceRef.current) {
+      try {
+        const source = audioContextRef.current.createMediaElementSource(ttsAudioRef.current);
+        const analyser = audioContextRef.current.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.5;
+        source.connect(analyser);
+        analyser.connect(audioContextRef.current.destination);
+        ttsSourceRef.current = source;
+        ttsAnalyserRef.current = analyser;
+      } catch (e) {
+        console.warn('[Voice Mode] createMediaElementSource for TTS failed:', e);
+      }
+    }
+  };
+
+  const setupMicAudio = async () => {
+    if (micStreamRef.current || !navigator.mediaDevices?.getUserMedia) return;
+    try {
+      initAudioContext();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      if (!isMountedRef.current || isShuttingDownRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      micStreamRef.current = stream;
+
+      if (audioContextRef.current) {
+        if (audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume().catch(() => {});
+        }
+        const source = audioContextRef.current.createMediaStreamSource(stream);
+        const analyser = audioContextRef.current.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.5;
+        source.connect(analyser);
+        // Important: DO NOT connect micAnalyser to audioContext.destination (avoids speaker echo)
+        micSourceRef.current = source;
+        micAnalyserRef.current = analyser;
+      }
+    } catch (err) {
+      console.warn('[Voice Mode] Mic stream audio analysis unavailable:', err.message);
+    }
+  };
+
+  // Real-time 60fps audio amplitude loop updating CSS custom property --level
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loop = () => {
+      if (isCancelled) return;
+
+      let target = 0;
+      const state = voiceStateRef.current;
+
+      if (state === 'speaking' && ttsAnalyserRef.current) {
+        const buffer = new Uint8Array(ttsAnalyserRef.current.frequencyBinCount);
+        ttsAnalyserRef.current.getByteFrequencyData(buffer);
+        let sum = 0;
+        for (let i = 0; i < buffer.length; i++) sum += buffer[i];
+        const avg = sum / buffer.length;
+        target = Math.min(1, Math.max(0, (avg - 10) / 55));
+      } else if (state === 'listening' && !isMutedRef.current && micAnalyserRef.current) {
+        const buffer = new Uint8Array(micAnalyserRef.current.frequencyBinCount);
+        micAnalyserRef.current.getByteFrequencyData(buffer);
+        let sum = 0;
+        for (let i = 0; i < buffer.length; i++) sum += buffer[i];
+        const avg = sum / buffer.length;
+        target = Math.min(1, Math.max(0, (avg - 8) / 50));
+      }
+
+      // Smooth attack and natural organic decay
+      if (target > currentLevelRef.current) {
+        currentLevelRef.current = currentLevelRef.current * 0.5 + target * 0.5;
+      } else {
+        currentLevelRef.current = currentLevelRef.current * 0.85 + target * 0.15;
+      }
+
+      if (currentLevelRef.current < 0.005) {
+        currentLevelRef.current = 0;
+      }
+
+      if (orbRef.current) {
+        orbRef.current.style.setProperty('--level', currentLevelRef.current.toFixed(3));
+      }
+
+      animFrameRef.current = requestAnimationFrame(loop);
+    };
+
+    animFrameRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      isCancelled = true;
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    };
+  }, []);
 
   const updateVoiceState = (newState) => {
     voiceStateRef.current = newState;
@@ -69,14 +214,45 @@ export default function VoiceModeModal({
       } catch (e) {}
     }
 
-    if (activeAudioRef.current) {
+    if (ttsAudioRef.current) {
+      try {
+        ttsAudioRef.current.pause();
+        ttsAudioRef.current.src = '';
+      } catch (e) {}
+    }
+    if (activeAudioRef.current && activeAudioRef.current !== ttsAudioRef.current) {
       try {
         activeAudioRef.current.pause();
         activeAudioRef.current.src = '';
       } catch (e) {}
-      activeAudioRef.current = null;
     }
+    activeAudioRef.current = null;
     stopGeminiVoice();
+
+    if (micStreamRef.current) {
+      try {
+        micStreamRef.current.getTracks().forEach((track) => track.stop());
+      } catch (e) {}
+      micStreamRef.current = null;
+    }
+    if (micSourceRef.current) {
+      try {
+        micSourceRef.current.disconnect();
+      } catch (e) {}
+      micSourceRef.current = null;
+    }
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try {
+        if (audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close().catch(() => {});
+        }
+      } catch (e) {}
+      audioContextRef.current = null;
+    }
   };
 
   const handleExitVoiceMode = () => {
@@ -86,13 +262,19 @@ export default function VoiceModeModal({
 
   // True interruption: instantly halt audio playback and resume listening
   const handleInterrupt = () => {
-    if (activeAudioRef.current) {
+    if (ttsAudioRef.current) {
+      try {
+        ttsAudioRef.current.pause();
+        ttsAudioRef.current.src = '';
+      } catch (e) {}
+    }
+    if (activeAudioRef.current && activeAudioRef.current !== ttsAudioRef.current) {
       try {
         activeAudioRef.current.pause();
         activeAudioRef.current.src = '';
       } catch (e) {}
-      activeAudioRef.current = null;
     }
+    activeAudioRef.current = null;
     stopGeminiVoice();
 
     if (onAbort) onAbort();
@@ -101,7 +283,7 @@ export default function VoiceModeModal({
     setCurrentAssistantSpeech('');
     updateVoiceState('listening');
 
-    if (!isMuted && !isShuttingDownRef.current) {
+    if (!isMutedRef.current && !isShuttingDownRef.current) {
       startListening();
     }
   };
@@ -272,6 +454,9 @@ export default function VoiceModeModal({
     updateVoiceState('speaking');
 
     try {
+      initAudioContext();
+      setupTtsAudio();
+
       const blobUrl = await synthesizeGeminiVoice(text, {
         voice: selectedVoice,
         apiKey
@@ -281,43 +466,53 @@ export default function VoiceModeModal({
         return;
       }
 
-      const audio = new Audio(blobUrl);
+      const audio = ttsAudioRef.current || new Audio();
       activeAudioRef.current = audio;
+      audio.src = blobUrl;
 
       audio.onended = () => {
         activeAudioRef.current = null;
         if (isMountedRef.current && !isShuttingDownRef.current) {
           setCurrentAssistantSpeech('');
           updateVoiceState('listening');
-          if (!isMuted) {
+          if (!isMutedRef.current) {
             startListening();
           }
         }
       };
 
       audio.onerror = (e) => {
-        console.warn('Audio playback error, returning to listen:', e);
+        console.warn('[Voice Mode] Audio playback error, returning to listen:', e);
         activeAudioRef.current = null;
         updateVoiceState('listening');
-        if (!isMuted) {
+        if (!isMutedRef.current) {
           startListening();
         }
       };
 
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume().catch(() => {});
+      }
+
       await audio.play();
     } catch (synthErr) {
-      console.warn('Gemini voice synthesis failed, returning to listening:', synthErr);
+      console.warn('[Voice Mode] Gemini voice synthesis failed, returning to listening:', synthErr);
       updateVoiceState('listening');
-      if (!isMuted) {
+      if (!isMutedRef.current) {
         startListening();
       }
     }
   };
 
-  // Component lifecycle: Start listening on mount
+  // Component lifecycle: Start listening & audio on mount
   useEffect(() => {
     isMountedRef.current = true;
     isShuttingDownRef.current = false;
+    isMutedRef.current = isMuted;
+
+    initAudioContext();
+    setupTtsAudio();
+    setupMicAudio();
 
     // Small delay to ensure modal transition has completed
     const initTimer = setTimeout(() => {
@@ -345,11 +540,13 @@ export default function VoiceModeModal({
   const handleToggleMute = () => {
     if (isMuted) {
       setIsMuted(false);
+      isMutedRef.current = false;
       updateVoiceState('listening');
       startListening();
       toast('Microphone unmuted', { icon: '🎙️', duration: 1500 });
     } else {
       setIsMuted(true);
+      isMutedRef.current = true;
       updateVoiceState('muted');
       stopListening();
       toast('Microphone muted', { icon: '🔇', duration: 1500 });
@@ -519,45 +716,41 @@ export default function VoiceModeModal({
         </div>
       </div>
 
-      {/* Floating Bottom Section: Living Gemini Glowing Orb & Controls */}
-      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-[#0f1012] via-[#0f1012]/95 to-transparent pt-10 pb-5 px-4 flex flex-col items-center pointer-events-none">
+      {/* Floating Bottom Section: Living ChatGPT Glowing Voice Orb & Controls */}
+      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-[#0f1012] via-[#0f1012]/95 to-transparent pt-8 pb-5 px-4 flex flex-col items-center pointer-events-none">
         <div className="pointer-events-auto relative flex flex-col items-center justify-center mb-3">
-          {/* Ambient luminous glow aura */}
-          <div className={`absolute w-28 h-28 rounded-full blur-2xl pointer-events-none transition-all duration-500 ${
-            voiceState === 'speaking'
-              ? 'bg-purple-500/35 scale-125'
-              : voiceState === 'processing'
-              ? 'bg-amber-500/35 scale-110'
-              : 'bg-cyan-500/25'
-          }`} />
-
-          {/* Gemini Living Voice Orb */}
+          {/* ChatGPT-Style Living Voice Orb */}
           <button
+            type="button"
+            ref={orbRef}
             onClick={handleOrbClick}
-            className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full cursor-pointer transition-all duration-300 select-none flex items-center justify-center shadow-2xl hover:scale-105 active:scale-95 border border-white/20 ${
-              voiceState === 'speaking'
-                ? 'bg-gradient-to-tr from-[#9B72CF] via-[#E275AA] to-[#4E80EE] animate-pulse scale-110'
-                : voiceState === 'processing'
-                ? 'bg-gradient-to-tr from-amber-500 via-orange-500 to-yellow-400 animate-spin'
-                : voiceState === 'muted'
-                ? 'bg-gray-800 opacity-60'
-                : 'bg-gradient-to-tr from-[#4E80EE] via-[#70CFFF] to-[#9B72CF]'
-            }`}
+            className="voice-orb-container cursor-pointer select-none border-none bg-transparent p-0 flex items-center justify-center focus:outline-none touch-manipulation"
             title={
               voiceState === 'speaking'
                 ? 'Tap to Interrupt'
                 : voiceState === 'processing'
                 ? 'Thinking...'
-                : 'Tap to Speak / Send'
+                : transcript
+                ? 'Tap orb to send now'
+                : 'Listening... (or tap orb to speak)'
             }
+            aria-label={voiceState === 'speaking' ? 'Interrupt speech' : 'Voice mode orb'}
           >
-            {voiceState === 'speaking' ? (
-              <Square size={18} className="fill-white text-white" />
-            ) : voiceState === 'processing' ? (
-              <span className="w-3 h-3 rounded-full bg-white animate-ping" />
-            ) : (
-              <Mic size={24} className="text-white" />
-            )}
+            {/* Soft, glowing, blue-toned sphere with fluid plasma-like motion */}
+            <div className="voice-orb" />
+
+            {/* Subtle state icon overlay in the center */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 transition-opacity duration-300">
+              {voiceState === 'speaking' ? (
+                <Square size={18} className="fill-white/90 text-white/90 drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]" />
+              ) : voiceState === 'processing' ? (
+                <span className="w-3.5 h-3.5 rounded-full bg-white/90 animate-ping shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
+              ) : voiceState === 'muted' ? (
+                <MicOff size={22} className="text-white/50 drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]" />
+              ) : (
+                <Mic size={22} className="text-white/80 drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]" />
+              )}
+            </div>
           </button>
 
           {/* Status Label underneath the Orb */}

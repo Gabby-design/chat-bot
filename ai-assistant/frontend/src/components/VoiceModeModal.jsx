@@ -138,7 +138,7 @@ export default function VoiceModeModal({
         for (let i = 0; i < buffer.length; i++) sum += buffer[i];
         const avg = sum / buffer.length;
         target = Math.min(1, Math.max(0, (avg - 10) / 55));
-      } else if (state === 'listening' && !isMutedRef.current && micAnalyserRef.current) {
+      } else if ((state === 'listening' || state === 'processing') && !isMutedRef.current && micAnalyserRef.current) {
         const buffer = new Uint8Array(micAnalyserRef.current.frequencyBinCount);
         micAnalyserRef.current.getByteFrequencyData(buffer);
         let sum = 0;
@@ -288,10 +288,9 @@ export default function VoiceModeModal({
     }
   };
 
-  // Robust SpeechRecognition Starter
+  // Robust SpeechRecognition Starter with continuous barge-in support
   const startListening = () => {
-    if (isShuttingDownRef.current || isMuted) return;
-    if (voiceStateRef.current === 'speaking' || voiceStateRef.current === 'processing') return;
+    if (isShuttingDownRef.current || isMutedRef.current) return;
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -318,12 +317,14 @@ export default function VoiceModeModal({
       recognition.onstart = () => {
         isListeningRef.current = true;
         setIsMicActive(true);
-        updateVoiceState('listening');
+        // Only flip UI state if not in speaking or processing
+        if (voiceStateRef.current !== 'speaking' && voiceStateRef.current !== 'processing') {
+          updateVoiceState('listening');
+        }
       };
 
       recognition.onresult = (event) => {
         if (isShuttingDownRef.current) return;
-        if (voiceStateRef.current === 'speaking' || voiceStateRef.current === 'processing') return;
 
         let interimTranscript = '';
         let finalTranscript = '';
@@ -338,6 +339,30 @@ export default function VoiceModeModal({
 
         const currentText = (finalTranscript + interimTranscript).trim();
         if (!currentText) return;
+
+        // TRUE INTERRUPTION / BARGE-IN:
+        // If the user speaks while assistant is speaking or processing, immediately halt audio and generation!
+        if (voiceStateRef.current === 'speaking' || voiceStateRef.current === 'processing') {
+          if (ttsAudioRef.current) {
+            try {
+              ttsAudioRef.current.pause();
+              ttsAudioRef.current.src = '';
+            } catch (e) {}
+          }
+          if (activeAudioRef.current && activeAudioRef.current !== ttsAudioRef.current) {
+            try {
+              activeAudioRef.current.pause();
+              activeAudioRef.current.src = '';
+            } catch (e) {}
+          }
+          activeAudioRef.current = null;
+          stopGeminiVoice();
+
+          if (onAbort) onAbort();
+
+          setCurrentAssistantSpeech('');
+          updateVoiceState('listening');
+        }
 
         setTranscript(currentText);
 
@@ -365,6 +390,7 @@ export default function VoiceModeModal({
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
           toast.error('Microphone permission required. Please allow mic access in browser.');
           setIsMuted(true);
+          isMutedRef.current = true;
           updateVoiceState('muted');
           stopListening();
         } else if (event.error === 'no-speech') {
@@ -376,18 +402,27 @@ export default function VoiceModeModal({
         isListeningRef.current = false;
         setIsMicActive(false);
 
-        // Auto-restart if in listening state
+        // Auto-restart if in listening, speaking, or processing state
         if (
           isMountedRef.current &&
           !isShuttingDownRef.current &&
-          !isMuted &&
-          voiceStateRef.current === 'listening'
+          !isMutedRef.current &&
+          (voiceStateRef.current === 'listening' ||
+            voiceStateRef.current === 'speaking' ||
+            voiceStateRef.current === 'processing')
         ) {
           setTimeout(() => {
-            if (isMountedRef.current && !isShuttingDownRef.current && voiceStateRef.current === 'listening') {
+            if (
+              isMountedRef.current &&
+              !isShuttingDownRef.current &&
+              !isMutedRef.current &&
+              (voiceStateRef.current === 'listening' ||
+                voiceStateRef.current === 'speaking' ||
+                voiceStateRef.current === 'processing')
+            ) {
               startListening();
             }
-          }, 200);
+          }, 150);
         }
       };
 
@@ -407,8 +442,9 @@ export default function VoiceModeModal({
     }
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.stop();
+        recognitionRef.current.abort();
       } catch (e) {}
+      recognitionRef.current = null;
     }
   };
 
@@ -416,9 +452,29 @@ export default function VoiceModeModal({
   const handleUserSubmit = async (spokenText) => {
     if (isShuttingDownRef.current || !spokenText.trim()) return;
 
-    stopListening();
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+
+    // Reset speech recognition buffer to discard already-submitted audio
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {}
+    }
+    isListeningRef.current = false;
+    setIsMicActive(false);
+
     updateVoiceState('processing');
     setTranscript('');
+
+    // Seamlessly restart mic so user can interrupt during thinking/processing or speaking
+    setTimeout(() => {
+      if (isMountedRef.current && !isShuttingDownRef.current && !isMutedRef.current) {
+        startListening();
+      }
+    }, 120);
 
     try {
       let accumulatedResponse = '';
@@ -432,8 +488,10 @@ export default function VoiceModeModal({
         }
 
         if (isDone && accumulatedResponse) {
-          // AI message stream completed; speak response using Gemini Neural Audio
-          playGeminiResponse(accumulatedResponse);
+          // If the user hasn't interrupted while processing, synthesize and play
+          if (voiceStateRef.current === 'processing' || voiceStateRef.current === 'speaking') {
+            playGeminiResponse(accumulatedResponse);
+          }
         }
       });
     } catch (err) {
@@ -495,6 +553,11 @@ export default function VoiceModeModal({
       }
 
       await audio.play();
+
+      // Ensure listening is active during audio playback for real-time speech barge-in
+      if (!isMutedRef.current && !isShuttingDownRef.current && !isListeningRef.current) {
+        startListening();
+      }
     } catch (synthErr) {
       console.warn('[Voice Mode] Gemini voice synthesis failed, returning to listening:', synthErr);
       updateVoiceState('listening');

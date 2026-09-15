@@ -857,7 +857,7 @@ export default function VoiceModeModal({
               handleExitVoiceMode();
               if (onType) onType();
             }}
-            className="min-h-[40px] px-4 py-2 rounded-full bg-white/10 hover:bg-white/15 text-gray-200 hover:text-white transition-all text-xs font-medium flex items-center gap-1.5 border border-white/10 cursor-pointer shadow-md touch-manipulation"
+            className="min-h-[40px] px-4 py-2 rounded-full bg-white/10 hover:bg-white/15 text-gray-200 hover:text-white transition-all text-xs font-medium flex items-center gap-1.5 border border-white/10 cursor-pointer touch-manipulation"
             title="Switch to typing"
           >
             <span>+</span>
@@ -865,7 +865,7 @@ export default function VoiceModeModal({
           </button>
 
           {/* Action pill: Voice Name badge, Mute, and Close */}
-          <div className="flex items-center gap-1.5 bg-[#1e1f20]/90 backdrop-blur-lg border border-white/10 px-2 py-1 rounded-full shadow-xl">
+          <div className="flex items-center gap-1.5 bg-[#1e1f20]/90 backdrop-blur-lg border border-white/10 px-2 py-1 rounded-full">
             <div className="px-2.5 py-1 rounded-full text-xs font-medium text-[#70CFFF] flex items-center gap-1">
               <Volume2 size={13} />
               <span className="text-[11px]">{selectedVoice}</span>
@@ -875,7 +875,7 @@ export default function VoiceModeModal({
               onClick={handleToggleMute}
               className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-full transition-colors cursor-pointer flex items-center justify-center touch-manipulation ${
                 isMuted
-                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/25'
                   : 'hover:bg-white/10 text-gray-300 hover:text-white'
               }`}
               title={isMuted ? 'Unmute microphone' : 'Mute microphone'}

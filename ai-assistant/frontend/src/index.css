@@ -65,20 +65,31 @@ body {
 }
 
 /* Button Utilities */
+button {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus,
+button:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .btn-primary {
   background: var(--gradient-primary);
   color: white;
   font-weight: 500;
   padding: 0.75rem 1.5rem;
   border-radius: 0.75rem;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 12px rgba(20, 184, 166, 0.3);
 }
 
 .btn-primary:hover {
-  box-shadow: 0 6px 20px rgba(20, 184, 166, 0.4);
+  background: var(--gradient-primary);
+  border-color: rgba(255, 255, 255, 0.2);
   transform: translateY(-1px);
 }
 
@@ -319,16 +330,6 @@ body {
     filter: drop-shadow(0 0 14px rgba(155, 114, 207, 0.75)) drop-shadow(0 0 22px rgba(226, 117, 170, 0.5));
   }
 }
-
-@keyframes gemini-shimmer-sweep {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
 @keyframes gemini-dot-pulse {
   0%, 100% {
     transform: translateY(0) scale(1);
@@ -342,70 +343,6 @@ body {
 
 .gemini-sparkle-active {
   animation: gemini-sparkle-breathe 2.4s ease-in-out infinite;
-}
-
-.gemini-shimmer-card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
-  max-width: 540px;
-  padding: 6px 0;
-}
-
-.gemini-shimmer-bar {
-  height: 14px;
-  border-radius: 7px;
-  background: linear-gradient(
-    90deg,
-    #1e1f20 0%,
-    rgba(78, 128, 238, 0.25) 20%,
-    rgba(155, 114, 207, 0.45) 38%,
-    rgba(226, 117, 170, 0.45) 55%,
-    rgba(112, 207, 255, 0.28) 75%,
-    #1e1f20 100%
-  );
-  background-size: 250% 100%;
-  animation: gemini-shimmer-sweep 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-.gemini-shimmer-bar:nth-child(1) {
-  width: 82%;
-  animation-delay: 0s;
-}
-
-.gemini-shimmer-bar:nth-child(2) {
-  width: 96%;
-  animation-delay: 0.22s;
-}
-
-.gemini-shimmer-bar:nth-child(3) {
-  width: 58%;
-  animation-delay: 0.44s;
-}
-
-.gemini-thinking-text {
-  font-size: 13px;
-  font-weight: 500;
-  background: linear-gradient(90deg, #4E80EE, #9B72CF, #E275AA, #70CFFF, #4E80EE);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: gemini-shimmer-sweep 3s linear infinite;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.gemini-thinking-container {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  width: fit-content;
 }
 
 .gemini-dot {

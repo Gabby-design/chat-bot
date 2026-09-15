@@ -1898,23 +1898,6 @@ function App() {
     </svg>
   );
 
-  // Gemini Signature Shimmer Response Animation
-  const GeminiThinkingAnimation = () => (
-    <div className="flex flex-col gap-2.5 py-1 text-left">
-      <div className="flex items-center gap-2 mb-0.5">
-        <span className="gemini-thinking-text">
-          <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#4E80EE] to-[#E275AA] animate-ping" />
-          Gabby is thinking...
-        </span>
-      </div>
-      <div className="gemini-shimmer-card">
-        <div className="gemini-shimmer-bar" />
-        <div className="gemini-shimmer-bar" />
-        <div className="gemini-shimmer-bar" />
-      </div>
-    </div>
-  );
-
   const renderMessageActions = (msg, index) => {
     if (msg.role !== 'assistant') return null;
     const isLiked = ratings[index] === 'like';
@@ -1948,7 +1931,7 @@ function App() {
           disabled={audioLoadingIndex === index}
           className={`min-h-[38px] px-2.5 sm:px-2 py-1.5 rounded-lg text-[11px] sm:text-xs flex items-center gap-1.5 transition-colors border touch-manipulation ${
             isSpeaking
-              ? 'bg-gradient-to-r from-[#4E80EE]/20 to-[#9B72CF]/20 text-[#70CFFF] border-[#70CFFF]/40 shadow-sm'
+              ? 'bg-[#70CFFF]/10 text-[#70CFFF] border-[#70CFFF]/25'
               : audioLoadingIndex === index
               ? 'bg-white/5 text-[#8e918f] border-white/10'
               : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
@@ -1983,7 +1966,7 @@ function App() {
           onClick={() => handleRate(index, 'like')}
           className={`min-h-[38px] min-w-[38px] p-2 rounded-lg text-[11px] sm:text-xs transition-colors border flex items-center justify-center touch-manipulation ${
             isLiked
-              ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
+              ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/25'
               : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
           }`}
           title="Good response"
@@ -1996,7 +1979,7 @@ function App() {
           onClick={() => handleRate(index, 'dislike')}
           className={`min-h-[38px] min-w-[38px] p-2 rounded-lg text-[11px] sm:text-xs transition-colors border flex items-center justify-center touch-manipulation ${
             isDisliked
-              ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
+              ? 'bg-rose-500/15 text-rose-400 border-rose-500/25'
               : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
           }`}
           title="Bad response"
@@ -2095,7 +2078,7 @@ function App() {
             <div className="p-3">
               <button
                 onClick={createNewChat}
-                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-full bg-[#131314] hover:bg-[#282a2c] transition-all text-sm font-medium text-left text-[#e3e3e3] hover:text-white border border-white/5 shadow-sm"
+                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-full bg-[#131314] hover:bg-[#282a2c] transition-all text-sm font-medium text-left text-[#e3e3e3] hover:text-white border border-white/10"
               >
                 <Plus size={18} className="text-[#4E80EE]" />
                 <span>New chat</span>
@@ -2151,7 +2134,7 @@ function App() {
                             onClick={() => loadChat(chat.id)}
                             className={`w-full flex flex-col gap-0.5 px-3 py-2 rounded-xl transition-all text-left ${
                               isActive
-                                ? 'bg-[#282a2c] text-white shadow-sm'
+                                ? 'bg-[#282a2c] text-white'
                                 : 'text-[#c4c7c5] hover:bg-[#282a2c]/60 hover:text-white'
                             }`}
                           >
@@ -2300,8 +2283,8 @@ function App() {
               onClick={toggleLandscapeMode}
               className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-full border transition-colors flex items-center justify-center cursor-pointer touch-manipulation ${
                 isLandscapeMode
-                  ? 'bg-[#4E80EE]/20 border-[#4E80EE]/50 text-[#70CFFF]'
-                  : 'border-white/10 hover:border-white/30 text-[#8a8a8e] hover:text-white bg-transparent'
+                  ? 'bg-[#4E80EE]/15 border-[#4E80EE]/30 text-[#70CFFF]'
+                  : 'border-white/10 hover:border-white/20 text-[#8a8a8e] hover:text-white bg-transparent'
               }`}
               title={isLandscapeMode ? 'Switch to portrait layout' : 'Switch to landscape layout'}
               aria-label={isLandscapeMode ? 'Switch to portrait layout' : 'Switch to landscape layout'}
@@ -2324,7 +2307,7 @@ function App() {
             <button
               type="button"
               onClick={createNewChat}
-              className="w-10 h-10 min-w-[40px] min-h-[40px] rounded-full border border-white/20 hover:border-white/60 text-[#e8e8e8] hover:text-white hover:bg-white/5 flex items-center justify-center transition-all cursor-pointer shadow-sm touch-manipulation"
+              className="w-10 h-10 min-w-[40px] min-h-[40px] rounded-full border border-white/10 hover:border-white/20 text-[#e8e8e8] hover:text-white hover:bg-white/5 flex items-center justify-center transition-all cursor-pointer touch-manipulation"
               title="Start new chat"
             >
               <Plus size={19} />
@@ -2580,10 +2563,7 @@ function App() {
                               <span className="streaming-cursor" title="Streaming..." />
                             )}
                           </>
-                        ) : (
-                          /* Shimmer Animation only when not thinking */
-                          !msg.isThinking && <GeminiThinkingAnimation />
-                        )}
+                        ) : null}
                       </div>
 
                       {/* Action buttons (Copy, Listen/TTS, Thumbs Up/Down, Regenerate) */}
@@ -2605,7 +2585,7 @@ function App() {
               <button
                 type="button"
                 onClick={scrollToBottom}
-                className="absolute -top-14 right-2 sm:right-4 w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/15 text-[#e8e8e8] hover:text-white shadow-xl flex items-center justify-center transition-all animate-bounce cursor-pointer z-20 touch-manipulation"
+                className="absolute -top-14 right-2 sm:right-4 w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/10 text-[#e8e8e8] hover:text-white flex items-center justify-center transition-all animate-bounce cursor-pointer z-20 touch-manipulation"
                 title="Jump to bottom"
               >
                 <ChevronDown size={20} />
@@ -2687,7 +2667,7 @@ function App() {
                     onClick={toggleThink}
                     className={`inline-flex items-center gap-1.5 min-h-[38px] px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium transition-all shrink-0 cursor-pointer border touch-manipulation ${
                       isThinkEnabled
-                        ? 'bg-[#9B72CF]/20 text-[#D8B4FE] border-[#9B72CF]/50 shadow-[0_0_8px_rgba(155,114,207,0.25)]'
+                        ? 'bg-[#9B72CF]/15 text-[#D8B4FE] border-[#9B72CF]/30'
                         : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
                     }`}
                     title="Toggle Reasoning Pass (Think)"
@@ -2703,7 +2683,7 @@ function App() {
                     onClick={toggleSearch}
                     className={`inline-flex items-center gap-1.5 min-h-[38px] px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium transition-all shrink-0 cursor-pointer border touch-manipulation ${
                       isSearchEnabled
-                        ? 'bg-[#4E80EE]/20 text-[#70CFFF] border-[#4E80EE]/50 shadow-[0_0_8px_rgba(78,128,238,0.25)]'
+                        ? 'bg-[#4E80EE]/15 text-[#70CFFF] border-[#4E80EE]/30'
                         : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
                     }`}
                     title="Toggle Web Search Grounding"
@@ -2720,7 +2700,7 @@ function App() {
                   <button
                     type="button"
                     onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
-                    className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full border border-white/15 hover:border-white/30 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer touch-manipulation"
+                    className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full border border-white/10 hover:border-white/20 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer touch-manipulation"
                     title="Add attachment"
                     aria-label="Add attachment"
                   >
@@ -2732,7 +2712,7 @@ function App() {
                     <button
                       type="button"
                       onClick={stopGeneration}
-                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all shadow-md flex items-center justify-center cursor-pointer touch-manipulation"
+                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all flex items-center justify-center cursor-pointer touch-manipulation"
                       title="Stop generation"
                     >
                       <Square size={13} className="fill-current" />
@@ -2741,7 +2721,7 @@ function App() {
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full bg-white text-[#131314] hover:bg-gray-200 shadow-md flex items-center justify-center cursor-pointer transition-all scale-100 hover:scale-105 active:scale-95 touch-manipulation"
+                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full bg-white text-[#131314] hover:bg-gray-200 flex items-center justify-center cursor-pointer transition-all scale-100 hover:scale-105 active:scale-95 touch-manipulation"
                       title="Send message"
                     >
                       <Send size={16} className="ml-0.5 text-[#131314]" />
@@ -2750,7 +2730,7 @@ function App() {
                     <button
                       type="button"
                       onClick={() => setIsVoiceModeOpen(true)}
-                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full border border-white/15 hover:border-white/30 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer touch-manipulation"
+                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full border border-white/10 hover:border-white/20 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer touch-manipulation"
                       title="Start Live Voice Conversation"
                     >
                       <Mic size={18} />
@@ -3007,7 +2987,7 @@ function App() {
               <button
                 onClick={() => handleSelectGem('code')}
                 className={`w-full p-4 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border transition-all text-left group cursor-pointer ${
-                  activeGem === 'code' ? 'border-purple-400 ring-2 ring-purple-500/50 shadow-lg' : 'border-purple-500/30 hover:border-purple-400/50'
+                  activeGem === 'code' ? 'border-purple-400 bg-purple-500/20' : 'border-purple-500/30 hover:border-purple-400/50'
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -3029,7 +3009,7 @@ function App() {
               <button
                 onClick={() => handleSelectGem('writing')}
                 className={`w-full p-4 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border transition-all text-left group cursor-pointer ${
-                  activeGem === 'writing' ? 'border-blue-400 ring-2 ring-blue-500/50 shadow-lg' : 'border-blue-500/30 hover:border-blue-400/50'
+                  activeGem === 'writing' ? 'border-blue-400 bg-blue-500/20' : 'border-blue-500/30 hover:border-blue-400/50'
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -3051,7 +3031,7 @@ function App() {
               <button
                 onClick={() => handleSelectGem('math')}
                 className={`w-full p-4 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border transition-all text-left group cursor-pointer ${
-                  activeGem === 'math' ? 'border-green-400 ring-2 ring-green-500/50 shadow-lg' : 'border-green-500/30 hover:border-green-400/50'
+                  activeGem === 'math' ? 'border-green-400 bg-green-500/20' : 'border-green-500/30 hover:border-green-400/50'
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -3073,7 +3053,7 @@ function App() {
               <button
                 onClick={() => handleSelectGem('brainstorm')}
                 className={`w-full p-4 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border transition-all text-left group cursor-pointer ${
-                  activeGem === 'brainstorm' ? 'border-orange-400 ring-2 ring-orange-500/50 shadow-lg' : 'border-orange-500/30 hover:border-orange-400/50'
+                  activeGem === 'brainstorm' ? 'border-orange-400 bg-orange-500/20' : 'border-orange-500/30 hover:border-orange-400/50'
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -3095,7 +3075,7 @@ function App() {
               <button
                 onClick={() => handleSelectGem('research')}
                 className={`w-full p-4 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border transition-all text-left group cursor-pointer ${
-                  activeGem === 'research' ? 'border-indigo-400 ring-2 ring-indigo-500/50 shadow-lg' : 'border-indigo-500/30 hover:border-indigo-400/50'
+                  activeGem === 'research' ? 'border-indigo-400 bg-indigo-500/20' : 'border-indigo-500/30 hover:border-indigo-400/50'
                 }`}
               >
                 <div className="flex items-start gap-3">

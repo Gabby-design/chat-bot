@@ -3,6 +3,48 @@ import { Mic, MicOff, X, Square, Zap, ThumbsUp, ThumbsDown, Copy, Check, Plus, V
 import toast from 'react-hot-toast';
 import { synthesizeGeminiVoice, stopGeminiVoice, GEMINI_VOICES, DEFAULT_GEMINI_VOICE } from '../utils/geminiVoice.js';
 
+// Anti-Self-Echo & Duplicate Filter: Prevents assistant from transcribing or replying to its own speaker output
+function isSelfEchoOrDuplicate(text, recentAssistantSpeeches = [], lastUserText = '') {
+  if (!text || typeof text !== 'string') return true;
+  const clean = text.toLowerCase().replace(/[^\w\s]/g, '').trim();
+  if (!clean || clean.length < 2) return true;
+
+  // 1. Check duplicate of last user submission within short window
+  if (lastUserText) {
+    const cleanLast = lastUserText.toLowerCase().replace(/[^\w\s]/g, '').trim();
+    if (clean === cleanLast) {
+      return true;
+    }
+  }
+
+  // 2. Filter echo of recent assistant utterances
+  const userWords = clean.split(/\s+/).filter((w) => w.length > 2);
+  if (userWords.length === 0) return false;
+
+  for (const speech of recentAssistantSpeeches) {
+    if (!speech) continue;
+    const cleanSpeech = speech.toLowerCase().replace(/[^\w\s]/g, '').trim();
+    // Direct substring check
+    if (cleanSpeech.includes(clean)) {
+      return true;
+    }
+    // Word overlap check (handles slightly altered STT transcripts of speaker audio)
+    const speechWordSet = new Set(cleanSpeech.split(/\s+/));
+    let matchCount = 0;
+    for (const w of userWords) {
+      if (speechWordSet.has(w)) matchCount++;
+    }
+    if (userWords.length <= 3 && matchCount >= 2) {
+      return true;
+    }
+    if (userWords.length > 3 && matchCount / userWords.length >= 0.5) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export default function VoiceModeModal({
   isOpen,
   onClose,
@@ -31,6 +73,13 @@ export default function VoiceModeModal({
   const activeAudioRef = useRef(null);
   const voiceStateRef = useRef('listening');
   const isMutedRef = useRef(false);
+
+  // Eliminate self-listening & echo loop safety refs
+  const isAssistantSpeakingRef = useRef(false);
+  const recentAssistantTextsRef = useRef([]);
+  const lastSubmittedUserSpeechRef = useRef('');
+  const lastSubmittedTimeRef = useRef(0);
+  const resumeListeningTimerRef = useRef(null);
 
   // Web Audio API & Analyser refs for real-time reactivity
   const audioContextRef = useRef(null);
@@ -90,9 +139,16 @@ export default function VoiceModeModal({
       initAudioContext();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
+          channelCount: 1,
+          sampleRate: 48000,
+          googEchoCancellation: { ideal: true },
+          googAutoGainControl: { ideal: true },
+          googNoiseSuppression: { ideal: true },
+          googHighpassFilter: { ideal: true },
+          googTypingNoiseDetection: { ideal: true }
         }
       });
 
@@ -262,6 +318,12 @@ export default function VoiceModeModal({
 
   // True interruption: instantly halt audio playback and resume listening
   const handleInterrupt = () => {
+    if (resumeListeningTimerRef.current) {
+      clearTimeout(resumeListeningTimerRef.current);
+      resumeListeningTimerRef.current = null;
+    }
+    isAssistantSpeakingRef.current = false;
+
     if (ttsAudioRef.current) {
       try {
         ttsAudioRef.current.pause();
@@ -288,9 +350,11 @@ export default function VoiceModeModal({
     }
   };
 
-  // Robust SpeechRecognition Starter with continuous barge-in support
+  // Robust SpeechRecognition Starter with zero self-listening protection
   const startListening = () => {
     if (isShuttingDownRef.current || isMutedRef.current) return;
+    // Primary Rule: Suspend speech recognition when assistant is speaking
+    if (isAssistantSpeakingRef.current || voiceStateRef.current === 'speaking') return;
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -317,14 +381,20 @@ export default function VoiceModeModal({
       recognition.onstart = () => {
         isListeningRef.current = true;
         setIsMicActive(true);
-        // Only flip UI state if not in speaking or processing
         if (voiceStateRef.current !== 'speaking' && voiceStateRef.current !== 'processing') {
           updateVoiceState('listening');
         }
       };
 
       recognition.onresult = (event) => {
-        if (isShuttingDownRef.current) return;
+        if (
+          isShuttingDownRef.current ||
+          isAssistantSpeakingRef.current ||
+          voiceStateRef.current === 'speaking'
+        ) {
+          // Never process TTS audio or speaker feedback
+          return;
+        }
 
         let interimTranscript = '';
         let finalTranscript = '';
@@ -340,26 +410,16 @@ export default function VoiceModeModal({
         const currentText = (finalTranscript + interimTranscript).trim();
         if (!currentText) return;
 
-        // TRUE INTERRUPTION / BARGE-IN:
-        // If the user speaks while assistant is speaking or processing, immediately halt audio and generation!
-        if (voiceStateRef.current === 'speaking' || voiceStateRef.current === 'processing') {
-          if (ttsAudioRef.current) {
-            try {
-              ttsAudioRef.current.pause();
-              ttsAudioRef.current.src = '';
-            } catch (e) {}
-          }
-          if (activeAudioRef.current && activeAudioRef.current !== ttsAudioRef.current) {
-            try {
-              activeAudioRef.current.pause();
-              activeAudioRef.current.src = '';
-            } catch (e) {}
-          }
-          activeAudioRef.current = null;
-          stopGeminiVoice();
+        // Anti-Self-Echo & Duplicate Transcription Filter:
+        // Ignore any speech that matches or contains recent assistant speech or duplicate submissions
+        if (isSelfEchoOrDuplicate(currentText, recentAssistantTextsRef.current, lastSubmittedUserSpeechRef.current)) {
+          console.warn('[Voice Mode] Ignored self-echo or duplicate transcript:', currentText);
+          return;
+        }
 
+        // Barge-in during processing (user changes mind while model is thinking)
+        if (voiceStateRef.current === 'processing') {
           if (onAbort) onAbort();
-
           setCurrentAssistantSpeech('');
           updateVoiceState('listening');
         }
@@ -379,7 +439,11 @@ export default function VoiceModeModal({
 
         // Silence detection: submit speech after 750ms of quiet
         silenceTimeoutRef.current = setTimeout(() => {
-          if (voiceStateRef.current === 'listening' && !isShuttingDownRef.current) {
+          if (
+            voiceStateRef.current === 'listening' &&
+            !isShuttingDownRef.current &&
+            !isAssistantSpeakingRef.current
+          ) {
             silenceTimeoutRef.current = null;
             handleUserSubmit(currentText);
           }
@@ -402,23 +466,21 @@ export default function VoiceModeModal({
         isListeningRef.current = false;
         setIsMicActive(false);
 
-        // Auto-restart if in listening, speaking, or processing state
+        // Auto-restart ONLY if in listening state and assistant is not speaking
         if (
           isMountedRef.current &&
           !isShuttingDownRef.current &&
           !isMutedRef.current &&
-          (voiceStateRef.current === 'listening' ||
-            voiceStateRef.current === 'speaking' ||
-            voiceStateRef.current === 'processing')
+          !isAssistantSpeakingRef.current &&
+          voiceStateRef.current === 'listening'
         ) {
           setTimeout(() => {
             if (
               isMountedRef.current &&
               !isShuttingDownRef.current &&
               !isMutedRef.current &&
-              (voiceStateRef.current === 'listening' ||
-                voiceStateRef.current === 'speaking' ||
-                voiceStateRef.current === 'processing')
+              !isAssistantSpeakingRef.current &&
+              voiceStateRef.current === 'listening'
             ) {
               startListening();
             }
@@ -450,31 +512,42 @@ export default function VoiceModeModal({
 
   // Submit user speech, stream response, and speak with authentic Gemini Voice
   const handleUserSubmit = async (spokenText) => {
-    if (isShuttingDownRef.current || !spokenText.trim()) return;
+    if (
+      isShuttingDownRef.current ||
+      !spokenText.trim() ||
+      isAssistantSpeakingRef.current ||
+      voiceStateRef.current === 'speaking'
+    ) {
+      return;
+    }
 
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current);
       silenceTimeoutRef.current = null;
     }
 
+    // Reject self-echoes or immediate duplicate loops
+    if (isSelfEchoOrDuplicate(spokenText, recentAssistantTextsRef.current, lastSubmittedUserSpeechRef.current)) {
+      console.warn('[Voice Mode] Dropped self-echo submission:', spokenText);
+      setTranscript('');
+      return;
+    }
+
+    lastSubmittedUserSpeechRef.current = spokenText;
+    lastSubmittedTimeRef.current = Date.now();
+
     // Reset speech recognition buffer to discard already-submitted audio
     if (recognitionRef.current) {
       try {
         recognitionRef.current.abort();
       } catch (e) {}
+      recognitionRef.current = null;
     }
     isListeningRef.current = false;
     setIsMicActive(false);
 
     updateVoiceState('processing');
     setTranscript('');
-
-    // Seamlessly restart mic so user can interrupt during thinking/processing or speaking
-    setTimeout(() => {
-      if (isMountedRef.current && !isShuttingDownRef.current && !isMutedRef.current) {
-        startListening();
-      }
-    }, 120);
 
     try {
       let accumulatedResponse = '';
@@ -488,7 +561,12 @@ export default function VoiceModeModal({
         }
 
         if (isDone && accumulatedResponse) {
-          // If the user hasn't interrupted while processing, synthesize and play
+          // Track recent assistant texts for anti-echo filtering
+          recentAssistantTextsRef.current.unshift(accumulatedResponse);
+          if (recentAssistantTextsRef.current.length > 6) {
+            recentAssistantTextsRef.current.pop();
+          }
+
           if (voiceStateRef.current === 'processing' || voiceStateRef.current === 'speaking') {
             playGeminiResponse(accumulatedResponse);
           }
@@ -496,6 +574,7 @@ export default function VoiceModeModal({
       });
     } catch (err) {
       console.error('Error submitting voice message:', err);
+      isAssistantSpeakingRef.current = false;
       updateVoiceState('listening');
       startListening();
     }
@@ -504,11 +583,15 @@ export default function VoiceModeModal({
   // Synthesize and play audio with Gemini Neural Audio
   const playGeminiResponse = async (text) => {
     if (isShuttingDownRef.current || !text) {
+      isAssistantSpeakingRef.current = false;
       updateVoiceState('listening');
       startListening();
       return;
     }
 
+    // Primary Rule: Suspend speech recognition the moment speaking begins
+    stopListening();
+    isAssistantSpeakingRef.current = true;
     updateVoiceState('speaking');
 
     try {
@@ -521,6 +604,7 @@ export default function VoiceModeModal({
       });
 
       if (isShuttingDownRef.current || voiceStateRef.current !== 'speaking') {
+        isAssistantSpeakingRef.current = false;
         return;
       }
 
@@ -530,18 +614,26 @@ export default function VoiceModeModal({
 
       audio.onended = () => {
         activeAudioRef.current = null;
+        isAssistantSpeakingRef.current = false;
         if (isMountedRef.current && !isShuttingDownRef.current) {
           setCurrentAssistantSpeech('');
-          updateVoiceState('listening');
-          if (!isMutedRef.current) {
-            startListening();
+          if (resumeListeningTimerRef.current) {
+            clearTimeout(resumeListeningTimerRef.current);
           }
+          // Acoustic decay buffer (300ms) to ensure speaker reverberation dissipates before reopening mic
+          resumeListeningTimerRef.current = setTimeout(() => {
+            if (isMountedRef.current && !isShuttingDownRef.current && !isMutedRef.current) {
+              updateVoiceState('listening');
+              startListening();
+            }
+          }, 300);
         }
       };
 
       audio.onerror = (e) => {
         console.warn('[Voice Mode] Audio playback error, returning to listen:', e);
         activeAudioRef.current = null;
+        isAssistantSpeakingRef.current = false;
         updateVoiceState('listening');
         if (!isMutedRef.current) {
           startListening();
@@ -553,13 +645,10 @@ export default function VoiceModeModal({
       }
 
       await audio.play();
-
-      // Ensure listening is active during audio playback for real-time speech barge-in
-      if (!isMutedRef.current && !isShuttingDownRef.current && !isListeningRef.current) {
-        startListening();
-      }
     } catch (synthErr) {
       console.warn('[Voice Mode] Gemini voice synthesis failed, returning to listening:', synthErr);
+      activeAudioRef.current = null;
+      isAssistantSpeakingRef.current = false;
       updateVoiceState('listening');
       if (!isMutedRef.current) {
         startListening();

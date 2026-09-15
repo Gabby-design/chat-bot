@@ -123,17 +123,17 @@ async function streamGeminiDirect({
   signal,
   onToken
 }) {
-  let primaryModel = 'gemini-3.5-flash';
-  let fallbackModels = ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+  let primaryModel = 'gemini-3.6-flash';
+  let fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
   if (mode === 'voice') {
-    primaryModel = 'gemini-3.5-flash-lite';
-    fallbackModels = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash'];
+    primaryModel = 'gemini-3.6-flash';
+    fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
   } else if (modelSelection === 'advanced') {
     primaryModel = 'gemini-3.7-flash';
-    fallbackModels = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+    fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
   } else if (modelSelection === 'fast' || modelSelection === 'lite') {
     primaryModel = 'gemini-3.5-flash-lite';
-    fallbackModels = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash'];
+    fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash'];
   }
 
   const modelsToTry = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
@@ -3591,8 +3591,8 @@ function App() {
         />
       )}
 
-      {/* Vercel Speed Insights (production only) */}
-      {import.meta.env.PROD && <SpeedInsights />}
+      {/* Vercel Speed Insights */}
+      <SpeedInsights />
 
 
     </div>

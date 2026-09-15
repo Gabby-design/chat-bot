@@ -16,13 +16,10 @@ import { performWebSearch } from './utils/webSearch.js';
 
 // Dynamic API_BASE_URL:
 // - If custom VITE_API_BASE_URL is provided, use it.
-// - If running on localhost or 127.0.0.1, use 'http://localhost:8000'.
-// - When deployed (Vercel, Netlify, custom domain), use '' so all requests use same-origin relative URLs (/api/...) avoiding CORS, Mixed Content, and Private Network Access errors.
+// - Default to '' (same-origin relative URLs: /api/...) avoiding hardcoded port connection refused errors.
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL !== undefined && import.meta.env.VITE_API_BASE_URL !== '')
   ? import.meta.env.VITE_API_BASE_URL
-  : (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-      ? 'http://localhost:8000'
-      : '');
+  : '';
 
 const getClientGeminiKey = () => {
   if (import.meta.env.VITE_GEMINI_API_KEY) return import.meta.env.VITE_GEMINI_API_KEY;
@@ -127,16 +124,16 @@ async function streamGeminiDirect({
   onToken
 }) {
   let primaryModel = 'gemini-3.6-flash';
-  let fallbackModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+  let fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
   if (mode === 'voice') {
-    primaryModel = 'gemini-2.5-flash';
-    fallbackModels = ['gemini-2.0-flash', 'gemini-flash-latest'];
+    primaryModel = 'gemini-3.6-flash';
+    fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
   } else if (modelSelection === 'advanced') {
     primaryModel = 'gemini-3.7-flash';
-    fallbackModels = ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+    fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
   } else if (modelSelection === 'fast' || modelSelection === 'lite') {
     primaryModel = 'gemini-3.5-flash-lite';
-    fallbackModels = ['gemini-3.6-flash', 'gemini-flash-latest'];
+    fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash'];
   }
 
   const modelsToTry = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
@@ -1633,7 +1630,7 @@ function App() {
             message: spokenText,
             chat_id: activeChatId || undefined,
             mode: 'voice',
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.6-flash',
             conversationHistory: messages
           }),
           signal: controller.signal
@@ -1647,7 +1644,7 @@ function App() {
         await streamGeminiDirect({
           prompt: spokenText,
           conversationHistory: messages,
-          modelSelection: 'gemini-2.5-flash',
+          modelSelection: 'gemini-3.6-flash',
           mode: 'voice',
           activeGem,
           signal: controller.signal,

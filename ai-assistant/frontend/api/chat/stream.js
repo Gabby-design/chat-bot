@@ -185,12 +185,12 @@ SPOKEN VOICE DELIVERY RULES:
   const systemInstructionText = mode === 'voice' ? voiceSystemPrompt : baseIntelligence;
 
   let selectedModel = 'gemini-3.6-flash';
-  let modelsToTry = [selectedModel, 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.8-flash'];
+  let modelsToTry = [selectedModel, 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
   let generationConfig = undefined;
 
   if (mode === 'voice') {
-    selectedModel = 'gemini-2.5-flash';
-    modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+    selectedModel = 'gemini-3.6-flash';
+    modelsToTry = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
     generationConfig = {
       temperature: 0.5,
       topP: 0.9,
@@ -200,9 +200,9 @@ SPOKEN VOICE DELIVERY RULES:
     if (model === 'fast' || model === 'lite') {
       selectedModel = 'gemini-3.5-flash-lite';
     } else if (model === 'advanced') {
-      selectedModel = 'gemini-3.6-flash';
+      selectedModel = 'gemini-3.7-flash';
     }
-    modelsToTry = [selectedModel, 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.8-flash'];
+    modelsToTry = [selectedModel, 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
   }
 
   const contents = [];

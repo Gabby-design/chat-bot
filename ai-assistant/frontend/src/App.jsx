@@ -1,6 +1,6 @@
 // src/App.jsx
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff, Download, Brain, Globe, Maximize2, ExternalLink } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, RotateCw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff, Download, Brain, Globe, Maximize2, ExternalLink } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast, { Toaster } from 'react-hot-toast';
@@ -249,26 +249,26 @@ function TableBlock({ children }) {
           <div className="flex items-center gap-1">
             <button
               onClick={handleCopy}
-              className="px-2 py-1 rounded-md text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1 cursor-pointer"
+              className="min-h-[38px] px-2.5 py-1.5 rounded-lg text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1.5 cursor-pointer touch-manipulation"
               title="Copy table as CSV"
             >
-              {isCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+              {isCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
               <span className="text-[11px]">{isCopied ? 'Copied' : 'Copy'}</span>
             </button>
             <button
               onClick={handleDownload}
-              className="px-2 py-1 rounded-md text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1 cursor-pointer"
+              className="min-h-[38px] px-2.5 py-1.5 rounded-lg text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1.5 cursor-pointer touch-manipulation"
               title="Download CSV"
             >
-              <Download size={12} />
+              <Download size={13} />
               <span className="text-[11px] hidden sm:inline">CSV</span>
             </button>
             <button
               onClick={() => setIsExpanded(true)}
-              className="p-1 rounded-md text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              className="min-h-[38px] min-w-[38px] p-2 rounded-lg text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors cursor-pointer flex items-center justify-center touch-manipulation"
               title="Expand table"
             >
-              <Maximize2 size={13} />
+              <Maximize2 size={14} />
             </button>
           </div>
         </div>
@@ -345,18 +345,18 @@ function CodeBlock({ className, children, ...props }) {
         </span>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          className="min-h-[38px] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors cursor-pointer touch-manipulation"
           title="Copy code"
         >
           {isCopied ? (
             <>
               <Check size={13} className="text-emerald-400" />
-              <span className="text-emerald-400 font-medium">Copied!</span>
+              <span className="text-emerald-400 font-medium text-[11px]">Copied!</span>
             </>
           ) : (
             <>
               <Copy size={13} />
-              <span>Copy</span>
+              <span className="text-[11px]">Copy</span>
             </>
           )}
         </button>
@@ -448,6 +448,23 @@ function App() {
   const chatContainerRef = useRef(null);
   const textareaRef = useRef(null);
 
+  // Manual-only Landscape Mode State (never auto-toggled by physical rotation)
+  const [isLandscapeMode, setIsLandscapeMode] = useState(() => {
+    return localStorage.getItem('gabby_landscape_mode') === 'true';
+  });
+
+  const toggleLandscapeMode = () => {
+    setIsLandscapeMode((prev) => {
+      const next = !prev;
+      localStorage.setItem('gabby_landscape_mode', String(next));
+      toast(next ? 'Landscape view active' : 'Portrait view active', {
+        icon: '🔄',
+        id: 'toggle-landscape'
+      });
+      return next;
+    });
+  };
+
   const toggleThink = () => {
     setIsThinkEnabled((prev) => {
       const next = !prev;
@@ -503,6 +520,11 @@ function App() {
 
   // Detect standalone PWA mode & capture beforeinstallprompt
   useEffect(() => {
+    // Best-effort orientation lock: harmless on iOS Safari (unsupported), helps Android/Chrome where available
+    try {
+      window.screen?.orientation?.lock?.('portrait').catch(() => {});
+    } catch (e) {}
+
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
     if (isStandalone) {
       setIsAppInstalled(true);
@@ -1554,18 +1576,18 @@ function App() {
         {/* Copy Response Button */}
         <button
           onClick={() => copyToClipboard(msg.content, index)}
-          className="p-1 sm:p-1.5 px-1.5 sm:px-2 hover:bg-white/10 rounded-md sm:rounded-lg text-gray-400 hover:text-white transition-colors text-[11px] sm:text-xs flex items-center gap-1 border border-transparent hover:border-white/10"
+          className="min-h-[38px] px-2.5 sm:px-2 py-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors text-[11px] sm:text-xs flex items-center gap-1.5 border border-transparent hover:border-white/10 touch-manipulation"
           title="Copy response"
         >
           {copiedIndex === index ? (
             <>
-              <Check size={12} className="sm:w-3.5 sm:h-3.5 text-emerald-400" />
-              <span className="text-[10px] sm:text-[11px] text-emerald-400 font-medium">Copied!</span>
+              <Check size={14} className="text-emerald-400" />
+              <span className="text-[11px] text-emerald-400 font-medium">Copied!</span>
             </>
           ) : (
             <>
-              <Copy size={12} className="sm:w-3.5 sm:h-3.5" />
-              <span className="text-[10px] sm:text-[11px] hidden sm:inline">Copy</span>
+              <Copy size={14} />
+              <span className="text-[11px] hidden sm:inline">Copy</span>
             </>
           )}
         </button>
@@ -1574,7 +1596,7 @@ function App() {
         <button
           onClick={() => toggleSpeech(index, msg.content)}
           disabled={audioLoadingIndex === index}
-          className={`p-1 sm:p-1.5 px-1.5 sm:px-2 rounded-md sm:rounded-lg text-[11px] sm:text-xs flex items-center gap-1 sm:gap-1.5 transition-colors border ${
+          className={`min-h-[38px] px-2.5 sm:px-2 py-1.5 rounded-lg text-[11px] sm:text-xs flex items-center gap-1.5 transition-colors border touch-manipulation ${
             isSpeaking
               ? 'bg-gradient-to-r from-[#4E80EE]/20 to-[#9B72CF]/20 text-[#70CFFF] border-[#70CFFF]/40 shadow-sm'
               : audioLoadingIndex === index
@@ -1585,23 +1607,23 @@ function App() {
         >
           {isSpeaking ? (
             <>
-              <div className="flex items-center gap-0.5 h-2.5 sm:h-3">
+              <div className="flex items-center gap-0.5 h-3">
                 <span className="sound-wave-bar" />
                 <span className="sound-wave-bar" />
                 <span className="sound-wave-bar" />
               </div>
-              <VolumeX size={12} className="sm:w-3.5 sm:h-3.5" />
-              <span className="text-[10px] sm:text-[11px] hidden sm:inline">Stop</span>
+              <VolumeX size={14} />
+              <span className="text-[11px] hidden sm:inline">Stop</span>
             </>
           ) : audioLoadingIndex === index ? (
             <>
-              <div className="w-3 h-3 border-2 border-[#70CFFF] border-t-transparent rounded-full animate-spin" />
-              <span className="text-[10px] sm:text-[11px]">Gemini Voice...</span>
+              <div className="w-3.5 h-3.5 border-2 border-[#70CFFF] border-t-transparent rounded-full animate-spin" />
+              <span className="text-[11px]">Gemini Voice...</span>
             </>
           ) : (
             <>
-              <Volume2 size={12} className="sm:w-3.5 sm:h-3.5" />
-              <span className="text-[10px] sm:text-[11px] hidden sm:inline">Listen</span>
+              <Volume2 size={14} />
+              <span className="text-[11px] hidden sm:inline">Listen</span>
             </>
           )}
         </button>
@@ -1609,36 +1631,36 @@ function App() {
         {/* Thumbs Up (Good Response) */}
         <button
           onClick={() => handleRate(index, 'like')}
-          className={`p-1 sm:p-1.5 rounded-md sm:rounded-lg text-[11px] sm:text-xs transition-colors border ${
+          className={`min-h-[38px] min-w-[38px] p-2 rounded-lg text-[11px] sm:text-xs transition-colors border flex items-center justify-center touch-manipulation ${
             isLiked
               ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
               : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
           }`}
           title="Good response"
         >
-          <ThumbsUp size={12} className={`sm:w-3.5 sm:h-3.5 ${isLiked ? 'fill-cyan-400' : ''}`} />
+          <ThumbsUp size={14} className={isLiked ? 'fill-cyan-400' : ''} />
         </button>
 
         {/* Thumbs Down (Bad Response) */}
         <button
           onClick={() => handleRate(index, 'dislike')}
-          className={`p-1 sm:p-1.5 rounded-md sm:rounded-lg text-[11px] sm:text-xs transition-colors border ${
+          className={`min-h-[38px] min-w-[38px] p-2 rounded-lg text-[11px] sm:text-xs transition-colors border flex items-center justify-center touch-manipulation ${
             isDisliked
               ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
               : 'text-gray-400 hover:text-white hover:bg-white/10 border-transparent hover:border-white/10'
           }`}
           title="Bad response"
         >
-          <ThumbsDown size={12} className={`sm:w-3.5 sm:h-3.5 ${isDisliked ? 'fill-rose-400' : ''}`} />
+          <ThumbsDown size={14} className={isDisliked ? 'fill-rose-400' : ''} />
         </button>
 
         {/* Regenerate Button */}
         <button
           onClick={() => regenerateMessage(index)}
-          className="p-1 sm:p-1.5 hover:bg-white/10 rounded-md sm:rounded-lg text-gray-400 hover:text-white transition-colors border border-transparent hover:border-white/10"
+          className="min-h-[38px] min-w-[38px] p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors border border-transparent hover:border-white/10 flex items-center justify-center touch-manipulation"
           title="Regenerate response"
         >
-          <RotateCcw size={12} className="sm:w-3.5 sm:h-3.5" />
+          <RotateCcw size={14} />
         </button>
       </div>
     );
@@ -1682,7 +1704,7 @@ function App() {
   );
 
   return (
-    <div className="flex h-screen h-[100dvh] bg-[var(--color-background-dark)] text-[var(--color-text-light)] overflow-hidden font-sans">
+    <div className={`flex h-screen h-[100dvh] bg-[var(--color-background-dark)] text-[var(--color-text-light)] overflow-hidden font-sans ${isLandscapeMode ? 'landscape-mode' : ''}`}>
       <Toaster />
       {/* Mobile Backdrop when Sidebar Drawer is open */}
       {isSidebarOpen && (
@@ -1849,23 +1871,23 @@ function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full relative min-w-0 bg-[#131314]">
         {/* Header */}
-        <header className="h-12 sm:h-14 flex items-center px-3 sm:px-4 justify-between bg-[#131314] border-b border-white/[0.08] z-10 shrink-0">
+        <header className="h-12 sm:h-14 flex items-center px-2.5 sm:px-4 justify-between bg-[#131314] border-b border-white/[0.08] z-10 shrink-0">
           {/* Left: hamburger icon -> opens slide-out panel with chat history */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button
               type="button"
               onClick={() => setIsSidebarOpen(true)}
-              className="p-2 hover:bg-[#1e1f20] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer"
+              className="w-10 h-10 min-w-[40px] min-h-[40px] hover:bg-[#1e1f20] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer flex items-center justify-center touch-manipulation"
               title="Chat history"
             >
-              <Menu size={20} />
+              <Menu size={19} />
             </button>
           </div>
 
           {/* Center: current chat's title (truncate with ellipsis if long) + Gemini Star icon */}
-          <div className="flex items-center gap-2 max-w-[50%] sm:max-w-[60%] justify-center min-w-0">
+          <div className="flex items-center gap-2 max-w-[42%] sm:max-w-[55%] justify-center min-w-0">
             <GeminiSparkle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
-            <span className="text-sm sm:text-base font-medium text-[#e8e8e8] truncate">
+            <span className="text-xs sm:text-base font-medium text-[#e8e8e8] truncate">
               {chats.find((c) => c.id === currentChatId)?.title || (messages.length > 0 ? (messages[0].content?.slice(0, 32) || 'Chat') : 'Gabby AI')}
             </span>
             <button
@@ -1885,16 +1907,31 @@ function App() {
             </button>
           </div>
 
-          {/* Right: circular outlined "+" button -> starts a new chat, plus Voice mode */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Right: Rotate View, Live Voice mode, and New chat button */}
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Manual Rotate View Button */}
+            <button
+              type="button"
+              onClick={toggleLandscapeMode}
+              className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-full border transition-colors flex items-center justify-center cursor-pointer touch-manipulation ${
+                isLandscapeMode
+                  ? 'bg-[#4E80EE]/20 border-[#4E80EE]/50 text-[#70CFFF]'
+                  : 'border-white/10 hover:border-white/30 text-[#8a8a8e] hover:text-white bg-transparent'
+              }`}
+              title={isLandscapeMode ? 'Switch to portrait layout' : 'Switch to landscape layout'}
+              aria-label={isLandscapeMode ? 'Switch to portrait layout' : 'Switch to landscape layout'}
+            >
+              <RotateCw size={18} className={`transition-transform duration-300 ${isLandscapeMode ? 'rotate-90 text-[#70CFFF]' : ''}`} />
+            </button>
+
             {/* Live Voice Mode Button */}
             <button
               type="button"
               onClick={() => setIsVoiceModeOpen(true)}
-              className="p-1.5 sm:px-3 sm:py-1.5 rounded-full text-[#c4c7c5] hover:text-white hover:bg-white/5 border border-white/10 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-auto sm:px-3 sm:py-1.5 rounded-full text-[#c4c7c5] hover:text-white hover:bg-white/5 border border-white/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation"
               title="Start Live Voice Conversation"
             >
-              <Mic size={15} className="text-[#70CFFF]" />
+              <Mic size={18} className="text-[#70CFFF]" />
               <span className="text-xs font-medium hidden sm:inline">Voice</span>
             </button>
 
@@ -1902,10 +1939,10 @@ function App() {
             <button
               type="button"
               onClick={createNewChat}
-              className="w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full border border-white/20 hover:border-white/60 text-[#e8e8e8] hover:text-white hover:bg-white/5 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+              className="w-10 h-10 min-w-[40px] min-h-[40px] rounded-full border border-white/20 hover:border-white/60 text-[#e8e8e8] hover:text-white hover:bg-white/5 flex items-center justify-center transition-all cursor-pointer shadow-sm touch-manipulation"
               title="Start new chat"
             >
-              <Plus size={18} />
+              <Plus size={19} />
             </button>
           </div>
         </header>
@@ -2016,22 +2053,22 @@ function App() {
                                 <p className="whitespace-pre-wrap">{msg.content}</p>
                               </div>
                             )}
-                            {/* User action buttons on hover */}
-                            <div className="opacity-0 group-hover/user:opacity-100 transition-opacity mt-1 flex items-center gap-1">
+                            {/* User action buttons on hover or touch */}
+                            <div className="opacity-90 sm:opacity-0 sm:group-hover/user:opacity-100 transition-opacity mt-1 flex items-center gap-1">
                               <button
                                 onClick={() => handleStartEdit(index, msg.content)}
-                                className="flex items-center gap-1 text-[10px] sm:text-xs text-[#8e918f] hover:text-[#70CFFF] px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
+                                className="min-h-[36px] px-2 py-1 flex items-center gap-1 text-[11px] sm:text-xs text-[#8e918f] hover:text-[#70CFFF] rounded-md hover:bg-white/5 transition-colors touch-manipulation"
                                 title="Edit message"
                               >
-                                <Pencil size={11} className="sm:w-3 sm:h-3" />
+                                <Pencil size={12} className="sm:w-3 sm:h-3" />
                                 <span>Edit</span>
                               </button>
                               <button
                                 onClick={() => copyToClipboard(msg.content, index)}
-                                className="text-[10px] sm:text-xs text-[#8e918f] hover:text-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-white/5 transition-colors"
+                                className="min-h-[36px] min-w-[36px] flex items-center justify-center text-[11px] sm:text-xs text-[#8e918f] hover:text-white p-1 rounded-md hover:bg-white/5 transition-colors touch-manipulation"
                                 title="Copy text"
                               >
-                                <Copy size={11} className="sm:w-3 sm:h-3" />
+                                <Copy size={12} className="sm:w-3 sm:h-3" />
                               </button>
                             </div>
                           </>
@@ -2183,10 +2220,10 @@ function App() {
               <button
                 type="button"
                 onClick={scrollToBottom}
-                className="absolute -top-12 right-2 sm:right-4 w-9 h-9 rounded-full bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/15 text-[#e8e8e8] hover:text-white shadow-xl flex items-center justify-center transition-all animate-bounce cursor-pointer z-20"
+                className="absolute -top-14 right-2 sm:right-4 w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/15 text-[#e8e8e8] hover:text-white shadow-xl flex items-center justify-center transition-all animate-bounce cursor-pointer z-20 touch-manipulation"
                 title="Jump to bottom"
               >
-                <ChevronDown size={18} />
+                <ChevronDown size={20} />
               </button>
             )}
 
@@ -2213,15 +2250,16 @@ function App() {
                     <img
                       src={attachedImage.dataUrl}
                       alt="Attachment preview"
-                      className="h-10 w-10 object-cover rounded-lg border border-white/10 shadow"
+                      className="h-11 w-11 object-cover rounded-lg border border-white/10 shadow"
                     />
                     <button
                       type="button"
                       onClick={() => setAttachedImage(null)}
-                      className="absolute -top-1.5 -right-1.5 bg-black/80 hover:bg-red-500 text-white rounded-full p-0.5 border border-white/20 shadow transition-colors cursor-pointer"
+                      className="attachment-close-btn"
                       title="Remove image"
+                      aria-label="Remove image attachment"
                     >
-                      <X size={10} />
+                      <X size={13} />
                     </button>
                   </div>
                   <div className="text-[10px] sm:text-xs min-w-0 flex-1">
@@ -2262,32 +2300,32 @@ function App() {
                   <button
                     type="button"
                     onClick={toggleThink}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-medium transition-all shrink-0 cursor-pointer border ${
+                    className={`inline-flex items-center gap-1.5 min-h-[38px] px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium transition-all shrink-0 cursor-pointer border touch-manipulation ${
                       isThinkEnabled
                         ? 'bg-[#9B72CF]/20 text-[#D8B4FE] border-[#9B72CF]/50 shadow-[0_0_8px_rgba(155,114,207,0.25)]'
                         : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
                     }`}
                     title="Toggle Reasoning Pass (Think)"
                   >
-                    <Brain size={13} className={isThinkEnabled ? 'text-[#D8B4FE]' : 'text-[#8a8a8e]'} />
+                    <Brain size={14} className={isThinkEnabled ? 'text-[#D8B4FE]' : 'text-[#8a8a8e]'} />
                     <span>Think</span>
-                    {isThinkEnabled && <span className="w-1 h-1 rounded-full bg-[#D8B4FE] animate-pulse" />}
+                    {isThinkEnabled && <span className="w-1.5 h-1.5 rounded-full bg-[#D8B4FE] animate-pulse" />}
                   </button>
 
                   {/* Redesigned DeepSeek-style Search Button */}
                   <button
                     type="button"
                     onClick={toggleSearch}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-medium transition-all shrink-0 cursor-pointer border ${
+                    className={`inline-flex items-center gap-1.5 min-h-[38px] px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium transition-all shrink-0 cursor-pointer border touch-manipulation ${
                       isSearchEnabled
                         ? 'bg-[#4E80EE]/20 text-[#70CFFF] border-[#4E80EE]/50 shadow-[0_0_8px_rgba(78,128,238,0.25)]'
                         : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
                     }`}
                     title="Toggle Web Search Grounding"
                   >
-                    <Globe size={13} className={isSearchEnabled ? 'text-[#70CFFF]' : 'text-[#8a8a8e]'} />
+                    <Globe size={14} className={isSearchEnabled ? 'text-[#70CFFF]' : 'text-[#8a8a8e]'} />
                     <span>Search</span>
-                    {isSearchEnabled && <span className="w-1 h-1 rounded-full bg-[#70CFFF] animate-pulse" />}
+                    {isSearchEnabled && <span className="w-1.5 h-1.5 rounded-full bg-[#70CFFF] animate-pulse" />}
                   </button>
                 </div>
 
@@ -2297,10 +2335,11 @@ function App() {
                   <button
                     type="button"
                     onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
-                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-white/15 hover:border-white/30 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer"
+                    className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full border border-white/15 hover:border-white/30 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer touch-manipulation"
                     title="Add attachment"
+                    aria-label="Add attachment"
                   >
-                    <Plus size={16} />
+                    <Plus size={18} />
                   </button>
 
                   {/* Circular Send or Mic or Stop */}
@@ -2308,28 +2347,28 @@ function App() {
                     <button
                       type="button"
                       onClick={stopGeneration}
-                      className="w-7 h-7 sm:w-8 sm:h-8 bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all shadow-md flex items-center justify-center cursor-pointer"
+                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all shadow-md flex items-center justify-center cursor-pointer touch-manipulation"
                       title="Stop generation"
                     >
-                      <Square size={11} className="fill-current sm:w-3 sm:h-3" />
+                      <Square size={13} className="fill-current" />
                     </button>
                   ) : (input.trim() || attachedImage) ? (
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white text-[#131314] hover:bg-gray-200 shadow-md flex items-center justify-center cursor-pointer transition-all scale-100 hover:scale-105 active:scale-95"
+                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full bg-white text-[#131314] hover:bg-gray-200 shadow-md flex items-center justify-center cursor-pointer transition-all scale-100 hover:scale-105 active:scale-95 touch-manipulation"
                       title="Send message"
                     >
-                      <Send size={13} className="ml-0.5 text-[#131314]" />
+                      <Send size={16} className="ml-0.5 text-[#131314]" />
                     </button>
                   ) : (
                     <button
                       type="button"
                       onClick={() => setIsVoiceModeOpen(true)}
-                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-white/15 hover:border-white/30 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer"
+                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full border border-white/15 hover:border-white/30 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer touch-manipulation"
                       title="Start Live Voice Conversation"
                     >
-                      <Mic size={15} />
+                      <Mic size={18} />
                     </button>
                   )}
                 </div>

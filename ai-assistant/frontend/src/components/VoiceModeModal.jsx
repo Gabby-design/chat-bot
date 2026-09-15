@@ -443,7 +443,7 @@ export default function VoiceModeModal({
           {/* Close button */}
           <button
             onClick={handleExitVoiceMode}
-            className="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+            className="w-10 h-10 min-w-[40px] min-h-[40px] rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer flex items-center justify-center touch-manipulation"
             title="Exit Voice Mode"
           >
             <X size={20} />
@@ -485,19 +485,19 @@ export default function VoiceModeModal({
                   <div className="text-gray-200 text-xs sm:text-sm leading-relaxed pl-1 whitespace-pre-wrap">
                     {msg.content}
                   </div>
-                  <div className="flex items-center gap-2 pl-1 pt-0.5 text-gray-500 text-xs">
+                  <div className="flex items-center gap-1 pl-1 pt-0.5 text-gray-500 text-xs">
                     <button
                       onClick={() => handleCopy(msg.content, idx)}
-                      className="p-1 hover:text-gray-300 transition-colors"
+                      className="min-h-[38px] min-w-[38px] p-2 hover:text-gray-300 transition-colors flex items-center justify-center touch-manipulation"
                       title="Copy"
                     >
-                      {copiedIndex === idx ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                      {copiedIndex === idx ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
                     </button>
-                    <button className="p-1 hover:text-gray-300 transition-colors" title="Good response">
-                      <ThumbsUp size={13} />
+                    <button className="min-h-[38px] min-w-[38px] p-2 hover:text-gray-300 transition-colors flex items-center justify-center touch-manipulation" title="Good response">
+                      <ThumbsUp size={14} />
                     </button>
-                    <button className="p-1 hover:text-gray-300 transition-colors" title="Bad response">
-                      <ThumbsDown size={13} />
+                    <button className="min-h-[38px] min-w-[38px] p-2 hover:text-gray-300 transition-colors flex items-center justify-center touch-manipulation" title="Bad response">
+                      <ThumbsDown size={14} />
                     </button>
                   </div>
                 </div>
@@ -582,7 +582,7 @@ export default function VoiceModeModal({
               handleExitVoiceMode();
               if (onType) onType();
             }}
-            className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-gray-200 hover:text-white transition-all text-xs font-medium flex items-center gap-1.5 border border-white/10 cursor-pointer shadow-md"
+            className="min-h-[40px] px-4 py-2 rounded-full bg-white/10 hover:bg-white/15 text-gray-200 hover:text-white transition-all text-xs font-medium flex items-center gap-1.5 border border-white/10 cursor-pointer shadow-md touch-manipulation"
             title="Switch to typing"
           >
             <span>+</span>
@@ -591,29 +591,29 @@ export default function VoiceModeModal({
 
           {/* Action pill: Voice Name badge, Mute, and Close */}
           <div className="flex items-center gap-1.5 bg-[#1e1f20]/90 backdrop-blur-lg border border-white/10 px-2 py-1 rounded-full shadow-xl">
-            <div className="px-2 py-0.5 rounded-full text-xs font-medium text-[#70CFFF] flex items-center gap-1">
-              <Volume2 size={12} />
+            <div className="px-2.5 py-1 rounded-full text-xs font-medium text-[#70CFFF] flex items-center gap-1">
+              <Volume2 size={13} />
               <span className="text-[11px]">{selectedVoice}</span>
             </div>
 
             <button
               onClick={handleToggleMute}
-              className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+              className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-full transition-colors cursor-pointer flex items-center justify-center touch-manipulation ${
                 isMuted
                   ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
                   : 'hover:bg-white/10 text-gray-300 hover:text-white'
               }`}
               title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
             >
-              {isMuted ? <MicOff size={15} /> : <Mic size={15} />}
+              {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
 
             <button
               onClick={handleExitVoiceMode}
-              className="p-1.5 rounded-full hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 transition-colors cursor-pointer"
+              className="w-10 h-10 min-w-[40px] min-h-[40px] rounded-full hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 transition-colors cursor-pointer flex items-center justify-center touch-manipulation"
               title="Close Voice Mode"
             >
-              <X size={15} />
+              <X size={18} />
             </button>
           </div>
         </div>

@@ -626,13 +626,9 @@ body {
   }
 }
 
-/* Landscape mobile */
-@media (max-width: 768px) and (orientation: landscape) {
-
-  /* Adjust for landscape */
-  .voice-pulse-overlay {
-    padding: 2rem;
-  }
+/* Manual Landscape mode layout adjustments */
+.landscape-mode .voice-pulse-overlay {
+  padding: 1.5rem;
 }
 
 /* Glowing Arc Animation */
@@ -884,15 +880,61 @@ body {
   color: #9B72CF;
 }
 
-/* Phone in landscape compact styling */
-@media (max-height: 520px) and (orientation: landscape) {
-  header {
-    height: 2.5rem !important;
+/* Manual Landscape Mode: only active when user explicitly taps the rotate toggle, never on auto rotation */
+.landscape-mode header {
+  height: 2.75rem !important;
+}
+
+.landscape-mode .prose-chat {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+/* Mobile Icon Size Tokens & 40-44px Touch Target Hit Areas (max-width: 640px) */
+@media (max-width: 640px) {
+  .btn-touch-target {
+    min-width: 40px;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
-  .prose-chat {
-    font-size: 0.7rem;
-    line-height: 1.4;
-  }
+}
+
+/* Image Attachment Preview Corner Close Button */
+.attachment-close-btn {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 22px;
+  height: 22px;
+  background-color: rgba(19, 19, 20, 0.88);
+  color: #ffffff;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.15s;
+  z-index: 20;
+}
+
+.attachment-close-btn:hover {
+  background-color: #dc2626;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+/* Invisible pseudo-element expands the hit area to 40px while visually staying 22px */
+.attachment-close-btn::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  bottom: -9px;
+  left: -9px;
+  right: -9px;
+  border-radius: 9999px;
 }
 
 /* Gemini Live & Siri Style Voice Orb Animations */

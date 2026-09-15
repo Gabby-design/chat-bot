@@ -194,6 +194,20 @@ export default function VoiceModeModal({
         for (let i = 0; i < buffer.length; i++) sum += buffer[i];
         const avg = sum / buffer.length;
         target = Math.min(1, Math.max(0, (avg - 10) / 55));
+
+        // Simple barge-in: If user starts talking into the microphone while assistant is speaking
+        if (micAnalyserRef.current && !isMutedRef.current && !isShuttingDownRef.current) {
+          const micBuffer = new Uint8Array(micAnalyserRef.current.frequencyBinCount);
+          micAnalyserRef.current.getByteFrequencyData(micBuffer);
+          let micSum = 0;
+          for (let i = 0; i < micBuffer.length; i++) micSum += micBuffer[i];
+          const micAvg = micSum / micBuffer.length;
+          // Hardware AEC subtracts speaker output; user talking into mic triggers micAvg > 35
+          if (micAvg > 35) {
+            handleInterrupt();
+            return;
+          }
+        }
       } else if ((state === 'listening' || state === 'processing') && !isMutedRef.current && micAnalyserRef.current) {
         const buffer = new Uint8Array(micAnalyserRef.current.frequencyBinCount);
         micAnalyserRef.current.getByteFrequencyData(buffer);
@@ -735,41 +749,7 @@ export default function VoiceModeModal({
           <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#4E80EE] via-[#9B72CF] to-[#E275AA] flex items-center justify-center shadow-md">
             <span className="text-xs font-bold text-white">G</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm sm:text-base font-medium tracking-tight text-gray-100">Gabby Live Voice</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border flex items-center gap-1.5 ${
-              voiceState === 'speaking'
-                ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
-                : voiceState === 'processing'
-                ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                : voiceState === 'muted'
-                ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                : isMicActive
-                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                : 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${
-                voiceState === 'speaking'
-                  ? 'bg-purple-400 animate-pulse'
-                  : voiceState === 'processing'
-                  ? 'bg-amber-400 animate-ping'
-                  : voiceState === 'muted'
-                  ? 'bg-rose-400'
-                  : 'bg-emerald-400 animate-pulse'
-              }`} />
-              <span>
-                {voiceState === 'speaking'
-                  ? `Speaking (${selectedVoice})`
-                  : voiceState === 'processing'
-                  ? 'Thinking...'
-                  : voiceState === 'muted'
-                  ? 'Muted'
-                  : isMicActive
-                  ? 'Listening'
-                  : 'Tap to Speak'}
-              </span>
-            </span>
-          </div>
+          <span className="text-sm sm:text-base font-medium tracking-tight text-gray-100">Gabby Voice</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -800,25 +780,9 @@ export default function VoiceModeModal({
         </div>
       </div>
 
-      {/* Main Conversation Stream */}
+      {/* Main Conversation Stream - Clean, minimal, blank when new, preserved when continuing */}
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-4 custom-scrollbar relative">
         <div className="max-w-3xl mx-auto space-y-4 pb-48">
-          {messages.length === 0 && !transcript && (
-            <div className="h-64 flex flex-col items-center justify-center text-center text-gray-400">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#4E80EE]/20 via-[#9B72CF]/20 to-[#E275AA]/20 flex items-center justify-center mb-3">
-                <Mic size={24} className="text-[#70CFFF]" />
-              </div>
-              <p className="text-base sm:text-lg font-medium text-gray-200">
-                {isMuted ? 'Microphone is muted' : 'Listening to you...'}
-              </p>
-              <p className="text-xs text-gray-500 mt-1 max-w-sm">
-                {isMuted
-                  ? 'Click the microphone button below to unmute'
-                  : 'Speak naturally, or tap the Glowing Orb to talk anytime. Gabby responds with clear Gemini audio.'}
-              </p>
-            </div>
-          )}
-
           {messages.map((msg, idx) => (
             <div key={idx} className="space-y-1.5">
               {msg.role === 'user' ? (
@@ -868,55 +832,21 @@ export default function VoiceModeModal({
         </div>
       </div>
 
-      {/* Floating Bottom Section: Living ChatGPT Glowing Voice Orb & Controls */}
+      {/* Floating Bottom Section: Living Voice Orb (pure animation, no center square, no status labels) */}
       <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-[#0f1012] via-[#0f1012]/95 to-transparent pt-8 pb-5 px-4 flex flex-col items-center pointer-events-none">
-        <div className="pointer-events-auto relative flex flex-col items-center justify-center mb-3">
-          {/* ChatGPT-Style Living Voice Orb */}
+        <div className="pointer-events-auto relative flex flex-col items-center justify-center mb-4">
+          {/* Living ChatGPT Voice Orb */}
           <button
             type="button"
             ref={orbRef}
             onClick={handleOrbClick}
             className="voice-orb-container cursor-pointer select-none border-none bg-transparent p-0 flex items-center justify-center focus:outline-none touch-manipulation"
-            title={
-              voiceState === 'speaking'
-                ? 'Tap to Interrupt'
-                : voiceState === 'processing'
-                ? 'Thinking...'
-                : transcript
-                ? 'Tap orb to send now'
-                : 'Listening... (or tap orb to speak)'
-            }
-            aria-label={voiceState === 'speaking' ? 'Interrupt speech' : 'Voice mode orb'}
+            title="Tap and talk"
+            aria-label="Tap and talk"
           >
-            {/* Soft, glowing, blue-toned sphere with fluid plasma-like motion */}
+            {/* Soft glowing fluid voice orb */}
             <div className="voice-orb" />
-
-            {/* Subtle state icon overlay in the center */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 transition-opacity duration-300">
-              {voiceState === 'speaking' ? (
-                <Square size={18} className="fill-white/90 text-white/90 drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]" />
-              ) : voiceState === 'processing' ? (
-                <span className="w-3.5 h-3.5 rounded-full bg-white/90 animate-ping shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
-              ) : voiceState === 'muted' ? (
-                <MicOff size={22} className="text-white/50 drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]" />
-              ) : (
-                <Mic size={22} className="text-white/80 drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]" />
-              )}
-            </div>
           </button>
-
-          {/* Status Label underneath the Orb */}
-          <div className="mt-2 text-center">
-            <span className="text-xs text-gray-300 font-medium">
-              {voiceState === 'speaking'
-                ? 'Tap to interrupt'
-                : voiceState === 'processing'
-                ? 'Synthesizing speech...'
-                : transcript
-                ? 'Tap orb to send now'
-                : 'Listening... (or tap orb to speak)'}
-            </span>
-          </div>
         </div>
 
         {/* Bottom Control Bar */}

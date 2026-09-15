@@ -57,6 +57,63 @@ const getEnglishVoice = () => {
   return anyEnglish || voices[0];
 };
 
+// Conversation Helpers: Date formatting, clear title generation, and 1-line preview extraction
+const formatChatDate = (dateStr) => {
+  if (!dateStr) return '';
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '';
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHours = diffMs / (1000 * 60 * 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffHours < 1) {
+      const mins = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+      return `${mins}m ago`;
+    }
+    if (diffHours < 24 && date.getDate() === now.getDate()) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    if (diffDays === 1 || (diffHours < 48 && date.getDate() === now.getDate() - 1)) {
+      return 'Yesterday';
+    }
+    if (diffDays < 7) {
+      return date.toLocaleDateString([], { weekday: 'short' });
+    }
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  } catch (e) {
+    return '';
+  }
+};
+
+const generateConversationTitle = (prompt) => {
+  if (!prompt || typeof prompt !== 'string') return 'New Chat';
+  let clean = prompt
+    .replace(/^[#*`\-_\s>]+/, '')
+    .replace(/[\r\n]+/g, ' ')
+    .trim();
+  if (!clean) return 'New Chat';
+  clean = clean.charAt(0).toUpperCase() + clean.slice(1);
+  if (clean.length > 36) {
+    return clean.slice(0, 36).trim() + '...';
+  }
+  return clean;
+};
+
+const getChatPreview = (msgs) => {
+  if (!msgs || !Array.isArray(msgs) || msgs.length === 0) return 'No messages yet';
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m?.content && typeof m.content === 'string' && m.content.trim()) {
+      const prefix = m.role === 'user' ? 'You: ' : '';
+      const text = (prefix + m.content).replace(/[\r\n]+/g, ' ').trim();
+      return text.length > 55 ? text.slice(0, 55).trim() + '...' : text;
+    }
+  }
+  return 'Conversation active';
+};
+
 async function streamGeminiDirect({
   prompt,
   conversationHistory = [],
@@ -582,8 +639,17 @@ function App() {
     textScraper: false,
   });
 
-  // New State for Chat History
-  const [chats, setChats] = useState([]);
+  // State for Chat History with persistent offline-first local restore
+  const [chats, setChats] = useState(() => {
+    try {
+      const stored = localStorage.getItem('gabby_conversations') || localStorage.getItem('gabby_chats_cache');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
   const [currentChatId, setCurrentChatId] = useState(null);
 
   // My Stuff state
@@ -673,14 +739,26 @@ function App() {
     });
   };
 
+  const isAutoScrollEnabledRef = useRef(true);
+
   const handleChatScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.target;
-    const isUp = scrollHeight - scrollTop - clientHeight > 160;
+    // When user scrolls up more than 100px from the bottom, disable autoscroll so they can read history
+    const isUp = scrollHeight - scrollTop - clientHeight > 100;
     setShowScrollBottom(isUp);
+    isAutoScrollEnabledRef.current = !isUp;
   };
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    isAutoScrollEnabledRef.current = true;
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   // Active Gem Persona & Multimodal Attachment
@@ -695,11 +773,6 @@ function App() {
 
   // Detect standalone PWA mode & capture beforeinstallprompt
   useEffect(() => {
-    // Best-effort orientation lock: harmless on iOS Safari (unsupported), helps Android/Chrome where available
-    try {
-      window.screen?.orientation?.lock?.('portrait').catch(() => {});
-    } catch (e) {}
-
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
     if (isStandalone) {
       setIsAppInstalled(true);
@@ -804,54 +877,102 @@ function App() {
     if (!chatId) return;
     try {
       localStorage.setItem(`gabby_chat_msgs_${chatId}`, JSON.stringify(updatedMessages));
-      const cached = localStorage.getItem('gabby_chats_cache');
-      let list = cached ? JSON.parse(cached) : [];
+
+      const stored = localStorage.getItem('gabby_conversations') || localStorage.getItem('gabby_chats_cache');
+      let list = stored ? JSON.parse(stored) : [];
+      if (!Array.isArray(list)) list = [];
+
       const existingIdx = list.findIndex((c) => c.id === chatId);
-      const chatTitle = title || updatedMessages.find((m) => m.role === 'user')?.content?.slice(0, 30) || 'New Chat';
+      const existing = existingIdx !== -1 ? list[existingIdx] : null;
+
+      const firstUserPrompt = updatedMessages.find((m) => m.role === 'user')?.content;
+      let chatTitle = title;
+      if (!chatTitle && existing?.title && existing.title !== 'New Chat' && existing.title !== 'New Conversation') {
+        chatTitle = existing.title;
+      }
+      if (!chatTitle) {
+        chatTitle = generateConversationTitle(firstUserPrompt || 'New Chat');
+      }
+
+      const preview = getChatPreview(updatedMessages);
+      const nowIso = new Date().toISOString();
+
       if (existingIdx !== -1) {
-        list[existingIdx].title = chatTitle;
-        list[existingIdx].updated_at = new Date().toISOString();
+        list[existingIdx] = {
+          ...list[existingIdx],
+          title: chatTitle,
+          preview,
+          updated_at: nowIso,
+          messages: updatedMessages
+        };
       } else {
         list.unshift({
           id: chatId,
           title: chatTitle,
-          created_at: new Date().toISOString()
+          preview,
+          created_at: nowIso,
+          updated_at: nowIso,
+          messages: updatedMessages
         });
       }
+
+      localStorage.setItem('gabby_conversations', JSON.stringify(list));
       localStorage.setItem('gabby_chats_cache', JSON.stringify(list));
       setChats(list);
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Failed to save chat locally:', e);
+    }
   };
 
   const fetchChats = async () => {
+    let localList = [];
+    try {
+      const stored = localStorage.getItem('gabby_conversations') || localStorage.getItem('gabby_chats_cache');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          localList = parsed;
+          setChats(localList);
+        }
+      }
+    } catch (e) {}
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/chats`);
       const contentType = response.headers.get('content-type') || '';
       if (response.ok && contentType.includes('application/json')) {
         const data = await response.json();
-        if (Array.isArray(data)) {
-          setChats(data);
-          try {
-            localStorage.setItem('gabby_chats_cache', JSON.stringify(data));
-          } catch (e) {}
-          return;
+        // Crucial: Only merge when remote actually returns chats. NEVER wipe local storage with empty []
+        if (Array.isArray(data) && data.length > 0) {
+          const map = new Map();
+          localList.forEach((c) => map.set(c.id, c));
+          data.forEach((c) => map.set(c.id, { ...map.get(c.id), ...c }));
+          const merged = Array.from(map.values()).sort((a, b) => {
+            const timeA = new Date(a.updated_at || a.created_at || 0).getTime();
+            const timeB = new Date(b.updated_at || b.created_at || 0).getTime();
+            return timeB - timeA;
+          });
+          localStorage.setItem('gabby_conversations', JSON.stringify(merged));
+          localStorage.setItem('gabby_chats_cache', JSON.stringify(merged));
+          setChats(merged);
         }
       }
     } catch (error) {
-      // Backend offline or unreachable
+      // Backend offline or unreachable — localList remains safely intact
     }
-
-    try {
-      const cached = localStorage.getItem('gabby_chats_cache');
-      if (cached) setChats(JSON.parse(cached));
-    } catch (e) {}
   };
 
-  const createNewChat = async () => {
+  const createNewChat = () => {
     try {
-      if (!currentChatId && messages.length === 0) return;
+      if (!currentChatId && messages.length === 0) {
+        if (window.innerWidth < 768) setIsSidebarOpen(false);
+        return;
+      }
       setCurrentChatId(null);
       setMessages([]);
+      setAttachedImage(null);
+      setInput('');
+      isAutoScrollEnabledRef.current = true;
       if (window.innerWidth < 768) setIsSidebarOpen(false);
     } catch (error) {
       console.error('Failed to create new chat:', error);
@@ -864,31 +985,45 @@ function App() {
     try {
       setIsLoading(true);
       let loadedMessages = null;
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/chats/${chatId}`);
-        const contentType = response.headers.get('content-type') || '';
-        if (response.ok && contentType.includes('application/json')) {
-          const data = await response.json();
-          if (data && Array.isArray(data.messages)) {
-            loadedMessages = data.messages;
-          }
-        }
-      } catch (err) {}
 
-      if (!loadedMessages) {
+      // 1. Instant local restore
+      try {
         const cached = localStorage.getItem(`gabby_chat_msgs_${chatId}`);
         if (cached) {
-          try {
-            loadedMessages = JSON.parse(cached);
-          } catch (e) {}
+          loadedMessages = JSON.parse(cached);
+        } else {
+          const convsStr = localStorage.getItem('gabby_conversations');
+          if (convsStr) {
+            const convs = JSON.parse(convsStr);
+            const found = convs.find((c) => c.id === chatId);
+            if (found && Array.isArray(found.messages)) {
+              loadedMessages = found.messages;
+            }
+          }
         }
+      } catch (e) {}
+
+      // 2. Fallback to server if needed
+      if (!loadedMessages) {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/chats/${chatId}`);
+          const contentType = response.headers.get('content-type') || '';
+          if (response.ok && contentType.includes('application/json')) {
+            const data = await response.json();
+            if (data && Array.isArray(data.messages)) {
+              loadedMessages = data.messages;
+            }
+          }
+        } catch (err) {}
       }
 
       setMessages(loadedMessages || []);
       setCurrentChatId(chatId);
+      isAutoScrollEnabledRef.current = true;
       if (window.innerWidth < 768) setIsSidebarOpen(false);
     } catch (error) {
       console.error('Failed to load chat:', error);
+      toast.error('Failed to load conversation');
     } finally {
       setIsLoading(false);
     }
@@ -912,6 +1047,7 @@ function App() {
                 setChats((prev) => {
                   const updated = prev.filter((c) => c.id !== chatId);
                   try {
+                    localStorage.setItem('gabby_conversations', JSON.stringify(updated));
                     localStorage.setItem('gabby_chats_cache', JSON.stringify(updated));
                   } catch (e) {}
                   return updated;
@@ -958,9 +1094,11 @@ function App() {
     });
   };
 
-  // Scroll to bottom on new messages
+  // Keep conversation scrolling naturally line-by-line as tokens stream in
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isAutoScrollEnabledRef.current && chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   }, [messages]);
 
 
@@ -1155,32 +1293,16 @@ function App() {
     // Truncate messages up to the edited user message
     const updatedHistory = [...messages.slice(0, index), { role: 'user', content: updatedContent }];
     setMessages(updatedHistory);
+    isAutoScrollEnabledRef.current = true;
 
     let activeChatId = currentChatId;
     if (!activeChatId) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/chats`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: updatedContent.slice(0, 30) })
-        });
-        if (res.ok) {
-          const newChat = await res.json();
-          activeChatId = newChat.id;
-          setCurrentChatId(activeChatId);
-          setChats((prev) => [newChat, ...prev]);
-        } else {
-          activeChatId = 'local-' + Date.now();
-          setCurrentChatId(activeChatId);
-        }
-      } catch (err) {
-        console.warn('Chat creation fallback to local session:', err);
-        activeChatId = 'local-' + Date.now();
-        setCurrentChatId(activeChatId);
-      }
+      activeChatId = 'chat-' + Date.now();
+      setCurrentChatId(activeChatId);
     }
+    saveChatLocally(activeChatId, updatedHistory);
 
-    await streamResponse(updatedContent, activeChatId);
+    await streamResponse(updatedContent, activeChatId, null, updatedHistory);
   };
 
   const regenerateMessage = async (assistantIndex) => {
@@ -1195,11 +1317,12 @@ function App() {
     // Truncate conversation to right after the prompt
     const truncated = messages.slice(0, userMsgIndex + 1);
     setMessages(truncated);
+    isAutoScrollEnabledRef.current = true;
 
-    await streamResponse(userMsg.content, currentChatId);
+    await streamResponse(userMsg.content, currentChatId, null, truncated);
   };
 
-  const streamResponse = async (message, chatIdToUse, currentImg = null) => {
+  const streamResponse = async (message, chatIdToUse, currentImg = null, messageHistory = null) => {
     setIsLoading(true);
     setIsStreaming(true);
 
@@ -1208,6 +1331,9 @@ function App() {
     }
     const controller = new AbortController();
     abortControllerRef.current = controller;
+
+    const historyForModel = messageHistory || messages;
+    isAutoScrollEnabledRef.current = true;
 
     // 1. Search Grounding Pass (when Search toggle is active)
     let searchResults = [];
@@ -1228,7 +1354,7 @@ function App() {
       }
     }
 
-    // 2. Think Reasoning Pass (when Think toggle is active)
+    // 2. Single assistant bubble appended immediately and updated progressively
     let accumulatedReasoning = '';
     let thoughtElapsed = null;
 
@@ -1240,7 +1366,7 @@ function App() {
         setThinkingSeconds(Math.floor((Date.now() - thinkStart) / 1000));
       }, 200);
 
-      // Append assistant message in thinking mode
+      // Single assistant bubble starting with thinking
       setMessages((prev) => [
         ...prev,
         {
@@ -1256,7 +1382,7 @@ function App() {
       try {
         await streamGeminiDirect({
           prompt: message,
-          conversationHistory: messages,
+          conversationHistory: historyForModel,
           modelSelection: selectedModel,
           mode: 'chat',
           activeGem,
@@ -1303,7 +1429,7 @@ function App() {
         });
       }
     } else {
-      // Direct stream without thinking pass
+      // Direct stream: Single assistant bubble added immediately!
       setMessages((prev) => [
         ...prev,
         {
@@ -1314,37 +1440,97 @@ function App() {
       ]);
     }
 
-    // 3. Final Answer Streaming Pass
+    // 3. Progressive real-time answer streaming into the single bubble
     try {
       let finalStreamed = '';
       const answerPrompt = accumulatedReasoning
         ? `[INTERNAL REASONING CHAIN]:\n${accumulatedReasoning}\n\n[USER QUERY]:\n${message}\n\n[TASK]:\nProvide the comprehensive, structured, and polished final answer to the user.`
         : message;
 
-      await streamGeminiDirect({
-        prompt: answerPrompt,
-        conversationHistory: messages,
-        modelSelection: selectedModel,
-        mode: 'chat',
-        activeGem,
-        attachedImage: currentImg,
-        searchContext: searchContextStr,
-        signal: controller.signal,
-        onToken: (token) => {
-          finalStreamed += token;
-          setMessages((prev) => {
-            const updated = [...prev];
-            if (updated.length > 0) {
-              const lastIdx = updated.length - 1;
-              updated[lastIdx] = {
-                ...updated[lastIdx],
-                content: (updated[lastIdx].content || '') + token
-              };
+      let streamSucceeded = false;
+      try {
+        await streamGeminiDirect({
+          prompt: answerPrompt,
+          conversationHistory: historyForModel,
+          modelSelection: selectedModel,
+          mode: 'chat',
+          activeGem,
+          attachedImage: currentImg,
+          searchContext: searchContextStr,
+          signal: controller.signal,
+          onToken: (token) => {
+            finalStreamed += token;
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated.length > 0) {
+                const lastIdx = updated.length - 1;
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  content: (updated[lastIdx].content || '') + token
+                };
+              }
+              return updated;
+            });
+          }
+        });
+        streamSucceeded = true;
+      } catch (directErr) {
+        if (directErr.name === 'AbortError') throw directErr;
+        console.warn('Direct stream notice, attempting backend fallback:', directErr);
+      }
+
+      // Fallback to backend /api/chat/stream if direct stream failed and nothing streamed
+      if (!streamSucceeded && !finalStreamed) {
+        const backendRes = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: answerPrompt,
+            model: selectedModel,
+            mode: 'chat',
+            conversationHistory: historyForModel
+          }),
+          signal: controller.signal
+        });
+
+        if (backendRes.ok && backendRes.body) {
+          const reader = backendRes.body.getReader();
+          const decoder = new TextDecoder();
+          let sseBuf = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            sseBuf += decoder.decode(value, { stream: true });
+            const lines = sseBuf.split('\n');
+            sseBuf = lines.pop() || '';
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith('data: ')) {
+                const payload = trimmed.slice(6).trim();
+                if (payload === '[DONE]') break;
+                try {
+                  const parsed = JSON.parse(payload);
+                  if (parsed.text) {
+                    finalStreamed += parsed.text;
+                    setMessages((prev) => {
+                      const updated = [...prev];
+                      if (updated.length > 0) {
+                        const lastIdx = updated.length - 1;
+                        updated[lastIdx] = {
+                          ...updated[lastIdx],
+                          content: (updated[lastIdx].content || '') + parsed.text
+                        };
+                      }
+                      return updated;
+                    });
+                  }
+                } catch (e) {}
+              }
             }
-            return updated;
-          });
+          }
         }
-      });
+      }
 
       setMessages((latest) => {
         saveChatLocally(chatIdToUse, latest);
@@ -1384,45 +1570,36 @@ function App() {
     if ((!input.trim() && !attachedImage) || isLoading) return;
 
     const currentImg = attachedImage;
+    const promptText = input;
     const userMsg = {
       role: 'user',
-      content: input,
+      content: promptText,
       image: currentImg?.dataUrl || null
     };
-    setMessages((prev) => [...prev, userMsg]);
+
+    // 1. Assign or reuse activeChatId synchronously without any network delay
+    let activeChatId = currentChatId;
+    const isNew = !activeChatId;
+    if (!activeChatId) {
+      activeChatId = 'chat-' + Date.now();
+      setCurrentChatId(activeChatId);
+    }
+
+    const convTitle = generateConversationTitle(promptText || (currentImg ? 'Image Analysis' : 'New Chat'));
+
+    // 2. Append user message & reset input immediately
+    const updatedHistory = [...messages, userMsg];
+    setMessages(updatedHistory);
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setAttachedImage(null);
+    isAutoScrollEnabledRef.current = true;
 
-    let activeChatId = currentChatId;
+    // 3. Immediately save local chat draft so user never loses work
+    saveChatLocally(activeChatId, updatedHistory, isNew ? convTitle : null);
 
-    if (!activeChatId) {
-      const chatTitle = (input || 'Image Analysis').slice(0, 30);
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/chats`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: chatTitle })
-        });
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const newChat = await res.json();
-          activeChatId = newChat.id;
-          setCurrentChatId(activeChatId);
-          setChats((prev) => [newChat, ...prev]);
-        } else {
-          activeChatId = 'local-' + Date.now();
-          setCurrentChatId(activeChatId);
-          saveChatLocally(activeChatId, [userMsg], chatTitle);
-        }
-      } catch (err) {
-        activeChatId = 'local-' + Date.now();
-        setCurrentChatId(activeChatId);
-        saveChatLocally(activeChatId, [userMsg], chatTitle);
-      }
-    }
-
-    await streamResponse(userMsg.content, activeChatId, currentImg);
+    // 4. Start streaming response immediately
+    await streamResponse(userMsg.content, activeChatId, currentImg, updatedHistory);
   };
 
   const handleVoiceMessage = async (spokenText, onChunk, interruptedContext = null) => {
@@ -1953,31 +2130,66 @@ function App() {
               </div>
 
               {/* Chats Section */}
-              <div>
-                <div className="px-3 py-1.5 text-xs font-medium text-[#8e918f]">Recent</div>
-                <div className="space-y-1">
-                  {chats.map((chat) => (
-                    <div key={chat.id} className="group relative">
-                      <button
-                        onClick={() => loadChat(chat.id)}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-full transition-all text-sm text-left truncate ${
-                          currentChatId === chat.id
-                            ? 'bg-[#282a2c] text-white font-medium'
-                            : 'text-[#c4c7c5] hover:bg-[#282a2c]/60 hover:text-white'
-                        }`}
-                      >
-                        <MessageSquare size={14} className="text-[#8e918f] shrink-0" />
-                        <span className="truncate flex-1 text-[13.5px]">{chat.title || 'New Chat'}</span>
-                      </button>
-                      <button
-                        onClick={(e) => deleteChat(e, chat.id)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-[#8e918f] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity rounded-full hover:bg-white/5"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  ))}
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex items-center justify-between px-3 py-1.5 text-xs font-medium text-[#8e918f]">
+                  <span>Recent</span>
+                  {chats.length > 0 && (
+                    <span className="text-[11px] text-[#5e6160] font-normal">{chats.length}</span>
+                  )}
                 </div>
+                {chats.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-xs text-[#5e6160]">
+                    No conversations yet
+                  </div>
+                ) : (
+                  <div className="space-y-1 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                    {chats.map((chat) => {
+                      const isActive = currentChatId === chat.id;
+                      const dateDisplay = formatChatDate(chat.updated_at || chat.created_at);
+                      const previewDisplay = chat.preview || 'Conversation active';
+
+                      return (
+                        <div key={chat.id} className="group relative rounded-xl transition-all">
+                          <button
+                            onClick={() => loadChat(chat.id)}
+                            className={`w-full flex flex-col gap-0.5 px-3 py-2 rounded-xl transition-all text-left ${
+                              isActive
+                                ? 'bg-[#282a2c] text-white shadow-sm'
+                                : 'text-[#c4c7c5] hover:bg-[#282a2c]/60 hover:text-white'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1.5 w-full pr-5">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <MessageSquare
+                                  size={13}
+                                  className={`shrink-0 ${isActive ? 'text-[#70CFFF]' : 'text-[#8e918f]'}`}
+                                />
+                                <span className="truncate font-medium text-[13px] text-[#e3e3e3] group-hover:text-white">
+                                  {chat.title || 'New Chat'}
+                                </span>
+                              </div>
+                              {dateDisplay && (
+                                <span className="text-[10px] text-[#8e918f] shrink-0 font-normal">
+                                  {dateDisplay}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11.5px] text-[#8e918f] truncate w-full pl-5 pr-5 leading-tight">
+                              {previewDisplay}
+                            </p>
+                          </button>
+                          <button
+                            onClick={(e) => deleteChat(e, chat.id)}
+                            className="absolute right-2 top-2.5 p-1.5 text-[#8e918f] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg hover:bg-white/10"
+                            title="Delete chat"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2701,20 +2913,25 @@ function App() {
                       <p className="text-xs mt-1">Star your favorite chats to save them here</p>
                     </div>
                   ) : (
-                    chats.slice(0, 5).map((chat) => (
+                    chats.slice(0, 10).map((chat) => (
                       <button
                         key={chat.id}
                         onClick={() => {
                           loadChat(chat.id);
                           setIsMyStuffOpen(false);
                         }}
-                        className="w-full p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left group"
+                        className="w-full p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-left group"
                       >
                         <div className="flex items-start gap-3">
-                          <MessageSquare size={16} className="text-gray-400 mt-0.5 shrink-0" />
+                          <MessageSquare size={16} className="text-[#70CFFF] mt-0.5 shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm text-white truncate">{chat.title || 'Untitled Chat'}</p>
-                            <p className="text-xs text-gray-500 mt-1">Recent conversation</p>
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm text-white truncate font-medium">{chat.title || 'Untitled Chat'}</p>
+                              <span className="text-[10.5px] text-gray-400 shrink-0 font-normal">
+                                {formatChatDate(chat.updated_at || chat.created_at)}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-400 truncate mt-0.5">{chat.preview || 'Recent conversation'}</p>
                           </div>
                           <ChevronRight size={16} className="text-gray-500 group-hover:text-white transition-colors" />
                         </div>

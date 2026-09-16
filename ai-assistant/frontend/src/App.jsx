@@ -1,11 +1,21 @@
 // src/App.jsx
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, RotateCw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff, Download, Brain, Globe, Maximize2, ExternalLink } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, RotateCw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff, Download, Brain, Globe, Maximize2, ExternalLink, MapPin } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast, { Toaster } from 'react-hot-toast';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import VoiceModeModal from './components/VoiceModeModal.jsx';
+import LocationPrimingModal from './components/LocationPrimingModal.jsx';
+import WeatherChip from './components/WeatherChip.jsx';
+import {
+  getLocationPermissionStatus,
+  requestBrowserLocation,
+  fetchWeatherAndPlace,
+  getCachedLocationWeather,
+  clearLocationWeatherCache,
+  isWeatherOrLocationQuery
+} from './utils/locationService.js';
 import {
   playGeminiVoice,
   stopGeminiVoice,
@@ -120,6 +130,7 @@ async function streamGeminiDirect({
   attachedImage = null,
   customSystemInstruction = null,
   searchContext = null,
+  locationContext = null,
   signal,
   onToken
 }) {
@@ -342,6 +353,9 @@ SPOKEN VOICE DELIVERY RULES:
   }
 
   let finalUserPrompt = prompt || (attachedImage ? 'Please analyze this image.' : 'Hello');
+  if (locationContext) {
+    finalUserPrompt = `${locationContext}\n\n${finalUserPrompt}`;
+  }
   if (searchContext) {
     finalUserPrompt = `${searchContext}\n\n[USER QUERY]:\n${finalUserPrompt}`;
   }
@@ -723,6 +737,105 @@ function App() {
       });
       return next;
     });
+  };
+
+  // Location & Real-Time Weather State
+  const [locationWeather, setLocationWeather] = useState(() => getCachedLocationWeather());
+  const [isWeatherChipDismissed, setIsWeatherChipDismissed] = useState(false);
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+  const [locationModalError, setLocationModalError] = useState(null);
+  const [isLocationLoading, setIsLocationLoading] = useState(false);
+  const pendingMessageRef = useRef(null);
+  const locationWeatherRef = useRef(locationWeather);
+  locationWeatherRef.current = locationWeather;
+
+  const handleEnableLocation = async () => {
+    setIsLocationLoading(true);
+    setLocationModalError(null);
+    try {
+      const { lat, lon } = await requestBrowserLocation();
+      const data = await fetchWeatherAndPlace({ lat, lon });
+      if (data) {
+        setLocationWeather(data);
+        setIsWeatherChipDismissed(false);
+        toast.success(`Location set: ${data.location.formatted || data.location.city}`);
+      }
+      setIsLocationModalOpen(false);
+
+      if (pendingMessageRef.current) {
+        const pending = pendingMessageRef.current;
+        pendingMessageRef.current = null;
+        await streamResponse(pending.text, pending.chatId, pending.image, pending.history, data);
+      }
+    } catch (err) {
+      console.warn('[Location] Browser detection notice:', err);
+      setLocationModalError(err);
+      if (err.isDenied) {
+        toast.error('Location permission was denied. You can enter your city manually.');
+      } else if (err.isUnavailable) {
+        toast.error("Couldn't detect your position. Enter your city manually.");
+      } else if (err.isTimeout) {
+        toast.error('Location request timed out. Please retry.');
+      }
+    } finally {
+      setIsLocationLoading(false);
+    }
+  };
+
+  const handleManualCitySubmit = async (cityName) => {
+    setIsLocationLoading(true);
+    setLocationModalError(null);
+    try {
+      const data = await fetchWeatherAndPlace({ city: cityName });
+      if (data) {
+        setLocationWeather(data);
+        setIsWeatherChipDismissed(false);
+        toast.success(`Weather updated for ${data.location.formatted || data.location.city}`);
+      }
+      setIsLocationModalOpen(false);
+
+      if (pendingMessageRef.current) {
+        const pending = pendingMessageRef.current;
+        pendingMessageRef.current = null;
+        await streamResponse(pending.text, pending.chatId, pending.image, pending.history, data);
+      }
+    } catch (err) {
+      console.error('[Location] City lookup failed:', err);
+      toast.error('Could not find weather for that city.');
+    } finally {
+      setIsLocationLoading(false);
+    }
+  };
+
+  const handleSkipLocation = async () => {
+    setIsLocationModalOpen(false);
+    setLocationModalError(null);
+    if (pendingMessageRef.current) {
+      const pending = pendingMessageRef.current;
+      pendingMessageRef.current = null;
+      await streamResponse(pending.text, pending.chatId, pending.image, pending.history, null);
+    }
+  };
+
+  const handleRefreshWeather = async () => {
+    if (!locationWeather?.location) return;
+    setIsLocationLoading(true);
+    try {
+      const loc = locationWeather.location;
+      const data = await fetchWeatherAndPlace({
+        lat: loc.latitude,
+        lon: loc.longitude,
+        city: loc.city || loc.formatted
+      });
+      if (data) {
+        setLocationWeather(data);
+        toast.success('Weather refreshed');
+      }
+    } catch (e) {
+      toast.error('Failed to refresh weather');
+    } finally {
+      setIsLocationLoading(false);
+    }
   };
 
   const toggleThink = () => {
@@ -1341,7 +1454,7 @@ function App() {
     await streamResponse(userMsg.content, currentChatId, null, truncated);
   };
 
-  const streamResponse = async (message, chatIdToUse, currentImg = null, messageHistory = null) => {
+  const streamResponse = async (message, chatIdToUse, currentImg = null, messageHistory = null, forcedLocation = undefined) => {
     setIsLoading(true);
     setIsStreaming(true);
 
@@ -1353,6 +1466,10 @@ function App() {
 
     const historyForModel = messageHistory || messages;
     isAutoScrollEnabledRef.current = true;
+
+    // Resolve active location & weather context
+    const activeLocation = forcedLocation !== undefined ? forcedLocation : (locationWeatherRef.current || locationWeather);
+    const locationContextStr = activeLocation?.summary ? activeLocation.summary : null;
 
     // 1. Search Grounding Pass (when Search toggle is active)
     let searchResults = [];
@@ -1407,6 +1524,7 @@ function App() {
           activeGem,
           attachedImage: currentImg,
           searchContext: searchContextStr,
+          locationContext: locationContextStr,
           customSystemInstruction:
             "You are an analytical deep reasoning engine. Think through this step by step. Evaluate constraints, evaluate alternatives, detect edge cases, and structure the logic. Output ONLY your internal chain-of-thought. Do not output the final polished response yet.",
           signal: controller.signal,
@@ -1476,6 +1594,7 @@ function App() {
           activeGem,
           attachedImage: currentImg,
           searchContext: searchContextStr,
+          locationContext: locationContextStr,
           signal: controller.signal,
           onToken: (token) => {
             finalStreamed += token;
@@ -1507,7 +1626,8 @@ function App() {
             message: answerPrompt,
             model: selectedModel,
             mode: 'chat',
-            conversationHistory: historyForModel
+            conversationHistory: historyForModel,
+            locationContext: locationContextStr
           }),
           signal: controller.signal
         });
@@ -1617,8 +1737,40 @@ function App() {
     // 3. Immediately save local chat draft so user never loses work
     saveChatLocally(activeChatId, updatedHistory, isNew ? convTitle : null);
 
-    // 4. Start streaming response immediately
-    await streamResponse(userMsg.content, activeChatId, currentImg, updatedHistory);
+    // 4. Intercept location/weather queries if location is not set yet
+    let activeLoc = locationWeatherRef.current || getCachedLocationWeather();
+    if (isWeatherOrLocationQuery(promptText) && !activeLoc) {
+      const permStatus = await getLocationPermissionStatus();
+      if (permStatus === 'granted') {
+        // Silently fetch location if permission is already granted in the browser
+        try {
+          const coords = await requestBrowserLocation();
+          activeLoc = await fetchWeatherAndPlace(coords);
+          if (activeLoc) {
+            setLocationWeather(activeLoc);
+            setIsWeatherChipDismissed(false);
+          }
+        } catch (e) {
+          console.warn('Silent location retrieval error:', e);
+        }
+        await streamResponse(userMsg.content, activeChatId, currentImg, updatedHistory, activeLoc);
+        return;
+      } else {
+        // Prompt the user with a friendly 1-line priming modal before any browser popup
+        pendingMessageRef.current = {
+          text: userMsg.content,
+          chatId: activeChatId,
+          image: currentImg,
+          history: updatedHistory
+        };
+        setLocationModalError(null);
+        setIsLocationModalOpen(true);
+        return;
+      }
+    }
+
+    // 5. Start streaming response immediately
+    await streamResponse(userMsg.content, activeChatId, currentImg, updatedHistory, activeLoc);
   };
 
   const handleVoiceMessage = async (spokenText, onChunk, interruptedContext = null) => {
@@ -1638,8 +1790,7 @@ function App() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
-
+    const locSummary = (locationWeatherRef.current || locationWeather)?.summary || null;
     let streamed = '';
 
     try {
@@ -1653,7 +1804,8 @@ function App() {
             chat_id: activeChatId || undefined,
             mode: 'voice',
             model: 'gemini-3.6-flash',
-            conversationHistory: messages
+            conversationHistory: messages,
+            locationContext: locSummary
           }),
           signal: controller.signal
         });
@@ -1669,6 +1821,7 @@ function App() {
           modelSelection: 'gemini-3.6-flash',
           mode: 'voice',
           activeGem,
+          locationContext: locSummary,
           signal: controller.signal,
           onToken: (token) => {
             streamed += token;
@@ -2287,7 +2440,7 @@ function App() {
           </div>
 
           {/* Center: current chat's title (truncate with ellipsis if long) + Gemini Star icon */}
-          <div className="flex items-center gap-2 max-w-[42%] sm:max-w-[55%] justify-center min-w-0">
+          <div className="flex items-center gap-2 max-w-[50%] sm:max-w-[65%] justify-center min-w-0">
             <GeminiSparkle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
             <span className="text-xs sm:text-base font-medium text-[#e8e8e8] truncate">
               {chats.find((c) => c.id === currentChatId)?.title || (messages.length > 0 ? (messages[0].content?.slice(0, 32) || 'Chat') : 'Gabby AI')}
@@ -2307,6 +2460,18 @@ function App() {
               </span>
               <ChevronDown size={10} />
             </button>
+            {/* Weather & Location Chip */}
+            {locationWeather && !isWeatherChipDismissed && (
+              <WeatherChip
+                locationWeather={locationWeather}
+                onRefresh={handleRefreshWeather}
+                onChangeCity={() => {
+                  setLocationModalError(null);
+                  setIsLocationModalOpen(true);
+                }}
+                onDismiss={() => setIsWeatherChipDismissed(true)}
+              />
+            )}
           </div>
 
           {/* Right: Rotate View, Live Voice mode, and New chat button */}
@@ -3221,6 +3386,54 @@ function App() {
                 </div>
               </div>
 
+              {/* Location & Real-Time Weather Section */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                  <MapPin size={16} />
+                  Location & Real-Time Weather
+                </h3>
+                <div className="p-3 rounded-lg bg-white/5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-white font-medium">
+                        {locationWeather ? (locationWeather.location.formatted || locationWeather.location.city) : 'Location not set'}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {locationWeather
+                          ? `${locationWeather.weather.temperature}°C • ${locationWeather.weather.condition}`
+                          : 'Gabby only uses your location when you ask about weather or nearby places.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLocationModalError(null);
+                        setIsLocationModalOpen(true);
+                      }}
+                      className="px-3 py-1.5 bg-[#4E80EE] hover:bg-[#3b6edb] text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                    >
+                      {locationWeather ? 'Update Location' : 'Set Location'}
+                    </button>
+                    {locationWeather && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearLocationWeatherCache();
+                          setLocationWeather(null);
+                          setIsWeatherChipDismissed(true);
+                          toast.success('Location data cleared');
+                        }}
+                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 text-xs rounded-lg transition-colors cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Notifications Section */}
               <div>
                 <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
@@ -3624,6 +3837,20 @@ function App() {
           }}
         />
       )}
+
+      {/* Location Priming & Manual Input Modal */}
+      <LocationPrimingModal
+        isOpen={isLocationModalOpen}
+        onClose={() => {
+          setIsLocationModalOpen(false);
+          setLocationModalError(null);
+        }}
+        onEnableLocation={handleEnableLocation}
+        onManualCitySubmit={handleManualCitySubmit}
+        onSkip={handleSkipLocation}
+        initialError={locationModalError}
+        isLoading={isLocationLoading}
+      />
 
       {/* Vercel Speed Insights */}
       <SpeedInsights />

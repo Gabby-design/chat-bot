@@ -24,11 +24,9 @@ function isSelfEchoOrDuplicate(text, recentAssistantSpeeches = [], lastUserText 
   for (const speech of recentAssistantSpeeches) {
     if (!speech) continue;
     const cleanSpeech = speech.toLowerCase().replace(/[^\w\s]/g, '').trim();
-    // Direct substring check
     if (cleanSpeech.includes(clean)) {
       return true;
     }
-    // Word overlap check (handles slightly altered STT transcripts of speaker audio)
     const speechWordSet = new Set(cleanSpeech.split(/\s+/));
     let matchCount = 0;
     for (const w of userWords) {
@@ -56,6 +54,8 @@ export default function VoiceModeModal({
   selectedVoice = DEFAULT_GEMINI_VOICE,
   apiKey = ''
 }) {
+  const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
   // Voice states: 'listening' | 'processing' | 'speaking' | 'muted' | 'idle'
   const [voiceState, setVoiceState] = useState('listening');
   const [isMuted, setIsMuted] = useState(false);
@@ -109,12 +109,32 @@ export default function VoiceModeModal({
     }
   };
 
+  const unlockAudioContextAndSpeech = () => {
+    try {
+      initAudioContext();
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        const silent = new SpeechSynthesisUtterance('');
+        silent.volume = 0;
+        window.speechSynthesis.speak(silent);
+      }
+      if (!ttsAudioRef.current) {
+        const audio = new Audio();
+        audio.crossOrigin = 'anonymous';
+        ttsAudioRef.current = audio;
+      }
+    } catch (e) {}
+  };
+
   const setupTtsAudio = () => {
     if (!ttsAudioRef.current) {
       const audio = new Audio();
       audio.crossOrigin = 'anonymous';
       ttsAudioRef.current = audio;
     }
+
+    // On mobile devices, avoid Web Audio createMediaElementSource routing because
+    // iOS Safari mutes or blocks MediaElementSource nodes attached to dynamic audio blobs.
+    if (isMobile) return;
 
     initAudioContext();
     if (audioContextRef.current && ttsAudioRef.current && !ttsSourceRef.current) {
@@ -134,6 +154,11 @@ export default function VoiceModeModal({
   };
 
   const setupMicAudio = async () => {
+    // IMPORTANT: On mobile phones, DO NOT open a competing getUserMedia audio stream!
+    // iOS Safari and Android Chrome lock the microphone hardware exclusively to getUserMedia,
+    // which starves and completely breaks webkitSpeechRecognition.
+    if (isMobile) return;
+
     if (micStreamRef.current || !navigator.mediaDevices?.getUserMedia) return;
     try {
       initAudioContext();
@@ -141,14 +166,7 @@ export default function VoiceModeModal({
         audio: {
           echoCancellation: { ideal: true },
           noiseSuppression: { ideal: true },
-          autoGainControl: { ideal: true },
-          channelCount: 1,
-          sampleRate: 48000,
-          googEchoCancellation: { ideal: true },
-          googAutoGainControl: { ideal: true },
-          googNoiseSuppression: { ideal: true },
-          googHighpassFilter: { ideal: true },
-          googTypingNoiseDetection: { ideal: true }
+          autoGainControl: { ideal: true }
         }
       });
 
@@ -173,7 +191,7 @@ export default function VoiceModeModal({
         micAnalyserRef.current = analyser;
       }
     } catch (err) {
-      console.warn('[Voice Mode] Mic stream audio analysis unavailable:', err.message);
+      console.warn('[Voice Mode] Desktop mic analyser optional stream note:', err.message);
     }
   };
 
@@ -181,40 +199,52 @@ export default function VoiceModeModal({
   useEffect(() => {
     let isCancelled = false;
 
-    const loop = () => {
+    const loop = (timestamp) => {
       if (isCancelled) return;
 
       let target = 0;
       const state = voiceStateRef.current;
 
-      if (state === 'speaking' && ttsAnalyserRef.current) {
-        const buffer = new Uint8Array(ttsAnalyserRef.current.frequencyBinCount);
-        ttsAnalyserRef.current.getByteFrequencyData(buffer);
-        let sum = 0;
-        for (let i = 0; i < buffer.length; i++) sum += buffer[i];
-        const avg = sum / buffer.length;
-        target = Math.min(1, Math.max(0, (avg - 10) / 55));
+      if (state === 'speaking') {
+        if (ttsAnalyserRef.current) {
+          const buffer = new Uint8Array(ttsAnalyserRef.current.frequencyBinCount);
+          ttsAnalyserRef.current.getByteFrequencyData(buffer);
+          let sum = 0;
+          for (let i = 0; i < buffer.length; i++) sum += buffer[i];
+          const avg = sum / buffer.length;
+          target = Math.min(1, Math.max(0, (avg - 10) / 55));
+        } else {
+          // Mobile natural speech pulse animation
+          target = 0.45 + 0.35 * Math.sin(timestamp * 0.007) * Math.cos(timestamp * 0.003);
+        }
 
-        // Simple barge-in: If user starts talking into the microphone while assistant is speaking
-        if (micAnalyserRef.current && !isMutedRef.current && !isShuttingDownRef.current) {
+        // Desktop barge-in: If user talks into mic while assistant speaks
+        if (!isMobile && micAnalyserRef.current && !isMutedRef.current && !isShuttingDownRef.current) {
           const micBuffer = new Uint8Array(micAnalyserRef.current.frequencyBinCount);
           micAnalyserRef.current.getByteFrequencyData(micBuffer);
           let micSum = 0;
           for (let i = 0; i < micBuffer.length; i++) micSum += micBuffer[i];
           const micAvg = micSum / micBuffer.length;
-          // Hardware AEC subtracts speaker output; user talking into mic triggers micAvg > 35
           if (micAvg > 35) {
             handleInterrupt();
             return;
           }
         }
-      } else if ((state === 'listening' || state === 'processing') && !isMutedRef.current && micAnalyserRef.current) {
-        const buffer = new Uint8Array(micAnalyserRef.current.frequencyBinCount);
-        micAnalyserRef.current.getByteFrequencyData(buffer);
-        let sum = 0;
-        for (let i = 0; i < buffer.length; i++) sum += buffer[i];
-        const avg = sum / buffer.length;
-        target = Math.min(1, Math.max(0, (avg - 8) / 50));
+      } else if ((state === 'listening' || state === 'processing') && !isMutedRef.current) {
+        if (micAnalyserRef.current) {
+          const buffer = new Uint8Array(micAnalyserRef.current.frequencyBinCount);
+          micAnalyserRef.current.getByteFrequencyData(buffer);
+          let sum = 0;
+          for (let i = 0; i < buffer.length; i++) sum += buffer[i];
+          const avg = sum / buffer.length;
+          target = Math.min(1, Math.max(0, (avg - 8) / 50));
+        } else if (state === 'listening') {
+          // Gentle breathing pulse while listening on mobile
+          target = 0.12 + 0.08 * Math.sin(timestamp * 0.003);
+        } else if (state === 'processing') {
+          // Rapid thinking pulse
+          target = 0.25 + 0.2 * Math.sin(timestamp * 0.01);
+        }
       }
 
       // Smooth attack and natural organic decay
@@ -244,7 +274,7 @@ export default function VoiceModeModal({
         animFrameRef.current = null;
       }
     };
-  }, []);
+  }, [isMobile]);
 
   const updateVoiceState = (newState) => {
     voiceStateRef.current = newState;
@@ -299,6 +329,10 @@ export default function VoiceModeModal({
     activeAudioRef.current = null;
     stopGeminiVoice();
 
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
     if (micStreamRef.current) {
       try {
         micStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -330,7 +364,7 @@ export default function VoiceModeModal({
     if (onClose) onClose();
   };
 
-  // True interruption: instantly halt audio playback and resume listening
+  // Instant interruption: halts audio playback or synthesis and resumes listening
   const handleInterrupt = () => {
     if (resumeListeningTimerRef.current) {
       clearTimeout(resumeListeningTimerRef.current);
@@ -353,6 +387,10 @@ export default function VoiceModeModal({
     activeAudioRef.current = null;
     stopGeminiVoice();
 
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
     if (onAbort) onAbort();
 
     setTranscript('');
@@ -364,20 +402,86 @@ export default function VoiceModeModal({
     }
   };
 
-  // Robust SpeechRecognition Starter with zero self-listening protection
+  // Device Speech Synthesis (Native TTS Fallback): Guarantees speech works on every phone (iOS Safari & Android Chrome)
+  const speakWithDeviceSynthesis = (text) => {
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        resolve(false);
+        return;
+      }
+
+      const cleanText = text
+        .replace(/```[\s\S]*?```/g, 'Code block omitted.')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/[*_~#]/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/[-–—]{2,}/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 3000);
+
+      if (!cleanText) {
+        resolve(false);
+        return;
+      }
+
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.lang = 'en-US';
+
+        const voices = window.speechSynthesis.getVoices?.() || [];
+        const preferred = voices.find(
+          (v) =>
+            v.lang.startsWith('en') &&
+            (v.name.includes('Natural') ||
+              v.name.includes('Siri') ||
+              v.name.includes('Google') ||
+              v.name.includes('Samantha') ||
+              v.name.includes('Karen'))
+        ) || voices.find((v) => v.lang.startsWith('en'));
+
+        if (preferred) utterance.voice = preferred;
+
+        utterance.onstart = () => {
+          isAssistantSpeakingRef.current = true;
+          updateVoiceState('speaking');
+        };
+
+        utterance.onend = () => {
+          isAssistantSpeakingRef.current = false;
+          resolve(true);
+        };
+
+        utterance.onerror = (e) => {
+          console.warn('[Voice Mode] Device speech synthesis error:', e);
+          isAssistantSpeakingRef.current = false;
+          resolve(false);
+        };
+
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.warn('[Voice Mode] Native speech synthesis failed to execute:', err);
+        resolve(false);
+      }
+    });
+  };
+
+  // SpeechRecognition Starter with mobile compatibility (iOS Safari & Android Chrome)
   const startListening = () => {
     if (isShuttingDownRef.current || isMutedRef.current) return;
-    // Primary Rule: Suspend speech recognition when assistant is speaking
     if (isAssistantSpeakingRef.current || voiceStateRef.current === 'speaking') return;
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      toast.error('Microphone voice recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
+      toast.error('Voice recognition is not supported in this browser. Please use Chrome, Safari, or Edge.');
       updateVoiceState('idle');
       return;
     }
 
-    // Abort existing instance if any
+    // Abort existing instance
     if (recognitionRef.current) {
       try {
         recognitionRef.current.abort();
@@ -387,7 +491,10 @@ export default function VoiceModeModal({
 
     try {
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
+      // On mobile devices (iOS Safari and Android), continuous = true causes silent stalls or immediate crashes.
+      // Setting continuous = false on mobile delivers solid, reliable single-utterance recognition,
+      // with onend handling seamless auto-restart.
+      recognition.continuous = !isMobile;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
       recognition.lang = 'en-US';
@@ -406,7 +513,6 @@ export default function VoiceModeModal({
           isAssistantSpeakingRef.current ||
           voiceStateRef.current === 'speaking'
         ) {
-          // Never process TTS audio or speaker feedback
           return;
         }
 
@@ -424,14 +530,13 @@ export default function VoiceModeModal({
         const currentText = (finalTranscript + interimTranscript).trim();
         if (!currentText) return;
 
-        // Anti-Self-Echo & Duplicate Transcription Filter:
-        // Ignore any speech that matches or contains recent assistant speech or duplicate submissions
+        // Anti-Self-Echo & Duplicate Transcription Filter
         if (isSelfEchoOrDuplicate(currentText, recentAssistantTextsRef.current, lastSubmittedUserSpeechRef.current)) {
           console.warn('[Voice Mode] Ignored self-echo or duplicate transcript:', currentText);
           return;
         }
 
-        // Barge-in during processing (user changes mind while model is thinking)
+        // Barge-in during processing
         if (voiceStateRef.current === 'processing') {
           if (onAbort) onAbort();
           setCurrentAssistantSpeech('');
@@ -451,7 +556,7 @@ export default function VoiceModeModal({
           return;
         }
 
-        // Silence detection: submit speech after 750ms of quiet
+        // Silence detection: submit speech after 700ms of quiet
         silenceTimeoutRef.current = setTimeout(() => {
           if (
             voiceStateRef.current === 'listening' &&
@@ -461,18 +566,20 @@ export default function VoiceModeModal({
             silenceTimeoutRef.current = null;
             handleUserSubmit(currentText);
           }
-        }, 750);
+        }, 700);
       };
 
       recognition.onerror = (event) => {
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          toast.error('Microphone permission required. Please allow mic access in browser.');
+          toast.error('Microphone access needed. Please allow microphone in browser or phone settings.');
           setIsMuted(true);
           isMutedRef.current = true;
           updateVoiceState('muted');
           stopListening();
         } else if (event.error === 'no-speech') {
-          // Normal silence, keep listening
+          // Normal silence, keep listening or allow onend to restart
+        } else if (event.error === 'network' || event.error === 'audio-capture') {
+          console.warn('[Voice Mode] Non-fatal recognition status:', event.error);
         }
       };
 
@@ -480,7 +587,7 @@ export default function VoiceModeModal({
         isListeningRef.current = false;
         setIsMicActive(false);
 
-        // Auto-restart ONLY if in listening state and assistant is not speaking
+        // Auto-restart if we should still be listening
         if (
           isMountedRef.current &&
           !isShuttingDownRef.current &&
@@ -488,6 +595,7 @@ export default function VoiceModeModal({
           !isAssistantSpeakingRef.current &&
           voiceStateRef.current === 'listening'
         ) {
+          const restartDelay = isMobile ? 250 : 150;
           setTimeout(() => {
             if (
               isMountedRef.current &&
@@ -498,7 +606,7 @@ export default function VoiceModeModal({
             ) {
               startListening();
             }
-          }, 150);
+          }, restartDelay);
         }
       };
 
@@ -524,7 +632,7 @@ export default function VoiceModeModal({
     }
   };
 
-  // Submit user speech, stream response, and speak with authentic Gemini Voice
+  // Submit user speech, stream response, and speak
   const handleUserSubmit = async (spokenText) => {
     if (
       isShuttingDownRef.current ||
@@ -540,7 +648,6 @@ export default function VoiceModeModal({
       silenceTimeoutRef.current = null;
     }
 
-    // Reject self-echoes or immediate duplicate loops
     if (isSelfEchoOrDuplicate(spokenText, recentAssistantTextsRef.current, lastSubmittedUserSpeechRef.current)) {
       console.warn('[Voice Mode] Dropped self-echo submission:', spokenText);
       setTranscript('');
@@ -550,7 +657,6 @@ export default function VoiceModeModal({
     lastSubmittedUserSpeechRef.current = spokenText;
     lastSubmittedTimeRef.current = Date.now();
 
-    // Reset speech recognition buffer to discard already-submitted audio
     if (recognitionRef.current) {
       try {
         recognitionRef.current.abort();
@@ -575,7 +681,6 @@ export default function VoiceModeModal({
         }
 
         if (isDone && accumulatedResponse) {
-          // Track recent assistant texts for anti-echo filtering
           recentAssistantTextsRef.current.unshift(accumulatedResponse);
           if (recentAssistantTextsRef.current.length > 6) {
             recentAssistantTextsRef.current.pop();
@@ -594,7 +699,7 @@ export default function VoiceModeModal({
     }
   };
 
-  // Synthesize and play audio with Gemini Neural Audio
+  // Synthesize and play audio with Gemini Neural Audio, with automatic fallback to Device TTS
   const playGeminiResponse = async (text) => {
     if (isShuttingDownRef.current || !text) {
       isAssistantSpeakingRef.current = false;
@@ -603,14 +708,14 @@ export default function VoiceModeModal({
       return;
     }
 
-    // Primary Rule: Suspend speech recognition the moment speaking begins
     stopListening();
     isAssistantSpeakingRef.current = true;
     updateVoiceState('speaking');
 
+    let playedViaGemini = false;
+
     try {
-      initAudioContext();
-      setupTtsAudio();
+      unlockAudioContextAndSpeech();
 
       const blobUrl = await synthesizeGeminiVoice(text, {
         voice: selectedVoice,
@@ -626,47 +731,51 @@ export default function VoiceModeModal({
       activeAudioRef.current = audio;
       audio.src = blobUrl;
 
-      audio.onended = () => {
-        activeAudioRef.current = null;
-        isAssistantSpeakingRef.current = false;
-        if (isMountedRef.current && !isShuttingDownRef.current) {
-          setCurrentAssistantSpeech('');
-          if (resumeListeningTimerRef.current) {
-            clearTimeout(resumeListeningTimerRef.current);
-          }
-          // Acoustic decay buffer (300ms) to ensure speaker reverberation dissipates before reopening mic
-          resumeListeningTimerRef.current = setTimeout(() => {
-            if (isMountedRef.current && !isShuttingDownRef.current && !isMutedRef.current) {
-              updateVoiceState('listening');
-              startListening();
-            }
-          }, 300);
+      await new Promise((resolve, reject) => {
+        audio.onended = () => {
+          activeAudioRef.current = null;
+          resolve();
+        };
+        audio.onerror = (e) => {
+          activeAudioRef.current = null;
+          reject(e);
+        };
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(reject);
         }
-      };
+      });
 
-      audio.onerror = (e) => {
-        console.warn('[Voice Mode] Audio playback error, returning to listen:', e);
-        activeAudioRef.current = null;
-        isAssistantSpeakingRef.current = false;
-        updateVoiceState('listening');
-        if (!isMutedRef.current) {
+      playedViaGemini = true;
+    } catch (geminiErr) {
+      console.warn('[Voice Mode] Gemini Neural TTS unavailable or blocked on mobile, falling back to device speech synthesis:', geminiErr);
+    }
+
+    // Fallback: If Gemini Neural Voice failed (quota limit, network error) or mobile autoplay blocked it,
+    // speak seamlessly using device native speech synthesis (Siri on iOS / Google Voice on Android)!
+    if (!playedViaGemini && isMountedRef.current && !isShuttingDownRef.current) {
+      try {
+        await speakWithDeviceSynthesis(text);
+      } catch (deviceErr) {
+        console.warn('[Voice Mode] Device speech fallback failed:', deviceErr);
+      }
+    }
+
+    activeAudioRef.current = null;
+    isAssistantSpeakingRef.current = false;
+
+    if (isMountedRef.current && !isShuttingDownRef.current) {
+      setCurrentAssistantSpeech('');
+      if (resumeListeningTimerRef.current) {
+        clearTimeout(resumeListeningTimerRef.current);
+      }
+      // Reopening mic acoustic buffer
+      resumeListeningTimerRef.current = setTimeout(() => {
+        if (isMountedRef.current && !isShuttingDownRef.current && !isMutedRef.current) {
+          updateVoiceState('listening');
           startListening();
         }
-      };
-
-      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-        await audioContextRef.current.resume().catch(() => {});
-      }
-
-      await audio.play();
-    } catch (synthErr) {
-      console.warn('[Voice Mode] Gemini voice synthesis failed, returning to listening:', synthErr);
-      activeAudioRef.current = null;
-      isAssistantSpeakingRef.current = false;
-      updateVoiceState('listening');
-      if (!isMutedRef.current) {
-        startListening();
-      }
+      }, 350);
     }
   };
 
@@ -676,14 +785,12 @@ export default function VoiceModeModal({
     isShuttingDownRef.current = false;
     isMutedRef.current = isMuted;
 
-    initAudioContext();
+    unlockAudioContextAndSpeech();
     setupTtsAudio();
     setupMicAudio();
 
-    // Small delay to ensure modal transition has completed
-    const initTimer = setTimeout(() => {
-      startListening();
-    }, 250);
+    // Start listening
+    startListening();
 
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
@@ -697,13 +804,13 @@ export default function VoiceModeModal({
 
     return () => {
       isMountedRef.current = false;
-      clearTimeout(initTimer);
       window.removeEventListener('keydown', handleKeyDown);
       killAllVoiceAndMic();
     };
   }, []);
 
   const handleToggleMute = () => {
+    unlockAudioContextAndSpeech();
     if (isMuted) {
       setIsMuted(false);
       isMutedRef.current = false;
@@ -720,6 +827,7 @@ export default function VoiceModeModal({
   };
 
   const handleOrbClick = () => {
+    unlockAudioContextAndSpeech();
     if (voiceState === 'speaking' || voiceState === 'processing') {
       handleInterrupt();
     } else if (voiceState === 'listening' && transcript.trim()) {
@@ -729,8 +837,9 @@ export default function VoiceModeModal({
       }
       handleUserSubmit(transcript);
     } else {
-      // Tap to talk user activation
+      // Tap to talk user activation on mobile
       startListening();
+      toast('Listening... Speak now', { icon: '🎙️', duration: 1500 });
     }
   };
 
@@ -749,7 +858,10 @@ export default function VoiceModeModal({
           <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#4E80EE] via-[#9B72CF] to-[#E275AA] flex items-center justify-center shadow-md">
             <span className="text-xs font-bold text-white">G</span>
           </div>
-          <span className="text-sm sm:text-base font-medium tracking-tight text-gray-100">Gabby Voice</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm sm:text-base font-medium tracking-tight text-gray-100">Gabby Voice</span>
+            <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 text-blue-300 font-semibold">3.6 Flash</span>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -780,7 +892,7 @@ export default function VoiceModeModal({
         </div>
       </div>
 
-      {/* Main Conversation Stream - Clean, minimal, blank when new, preserved when continuing */}
+      {/* Main Conversation Stream */}
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-4 custom-scrollbar relative">
         <div className="max-w-3xl mx-auto space-y-4 pb-48">
           {messages.map((msg, idx) => (
@@ -832,21 +944,41 @@ export default function VoiceModeModal({
         </div>
       </div>
 
-      {/* Floating Bottom Section: Living Voice Orb (pure animation, no center square, no status labels) */}
+      {/* Floating Bottom Section: Living Voice Orb */}
       <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-[#0f1012] via-[#0f1012]/95 to-transparent pt-8 pb-5 px-4 flex flex-col items-center pointer-events-none">
-        <div className="pointer-events-auto relative flex flex-col items-center justify-center mb-4">
-          {/* Living ChatGPT Voice Orb */}
+        <div className="pointer-events-auto relative flex flex-col items-center justify-center mb-3">
+          {/* Living Voice Orb */}
           <button
             type="button"
             ref={orbRef}
             onClick={handleOrbClick}
             className="voice-orb-container cursor-pointer select-none border-none bg-transparent p-0 flex items-center justify-center focus:outline-none touch-manipulation"
-            title="Tap and talk"
-            aria-label="Tap and talk"
+            title="Tap orb to talk or interrupt"
+            aria-label="Tap orb to talk or interrupt"
           >
-            {/* Soft glowing fluid voice orb */}
             <div className="voice-orb" />
           </button>
+
+          {/* Live Status Hint for Mobile & Desktop */}
+          <div className="mt-2 text-center select-none">
+            {voiceState === 'speaking' ? (
+              <span className="text-xs font-medium text-[#E275AA] animate-pulse">
+                Gabby is speaking • Tap to interrupt
+              </span>
+            ) : voiceState === 'processing' ? (
+              <span className="text-xs font-medium text-purple-300 animate-pulse">
+                Thinking...
+              </span>
+            ) : voiceState === 'muted' ? (
+              <span className="text-xs font-medium text-rose-400">
+                Microphone muted • Tap mic below to speak
+              </span>
+            ) : (
+              <span className="text-xs font-medium text-[#70CFFF]">
+                {transcript ? 'Listening...' : isMobile ? 'Listening • Tap orb to speak' : 'Listening... speak anytime'}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Bottom Control Bar */}
@@ -868,7 +1000,7 @@ export default function VoiceModeModal({
           <div className="flex items-center gap-1.5 bg-[#1e1f20]/90 backdrop-blur-lg border border-white/10 px-2 py-1 rounded-full">
             <div className="px-2.5 py-1 rounded-full text-xs font-medium text-[#70CFFF] flex items-center gap-1">
               <Volume2 size={13} />
-              <span className="text-[11px]">{selectedVoice}</span>
+              <span className="text-[11px]">Gemini 3.6 • {selectedVoice}</span>
             </div>
 
             <button

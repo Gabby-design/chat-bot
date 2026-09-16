@@ -177,7 +177,10 @@ async def chat_stream(request: ChatRequest):
             model_selection = request.model or ""
             configured_model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
             
-            if model_selection == "advanced":
+            if request.mode == "voice":
+                primary_model = "gemini-3.6-flash"
+                fallback_models = ["gemini-3.5-flash", "gemini-3.7-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash"]
+            elif model_selection == "advanced":
                 primary_model = "gemini-3.6-flash"
                 fallback_models = ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.8-flash"]
             elif model_selection in ("fast", "lite"):

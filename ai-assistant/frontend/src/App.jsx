@@ -612,6 +612,28 @@ function App() {
   // Live Voice Mode State
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
 
+  const openVoiceMode = () => {
+    // Prime mobile audio & speech synthesis in the synchronous user tap gesture
+    if (typeof window !== 'undefined') {
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          const tempCtx = new AudioContextClass();
+          if (tempCtx.state === 'suspended') {
+            tempCtx.resume().catch(() => {});
+          }
+        }
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const silentUtterance = new SpeechSynthesisUtterance('');
+          silentUtterance.volume = 0;
+          window.speechSynthesis.speak(silentUtterance);
+        }
+      } catch (e) {}
+    }
+    setIsVoiceModeOpen(true);
+  };
+
   // Ratings & Speech & Editing state
   const [ratings, setRatings] = useState({});
   const [speakingIndex, setSpeakingIndex] = useState(null);
@@ -2307,7 +2329,7 @@ function App() {
             {/* Live Voice Mode Button */}
             <button
               type="button"
-              onClick={() => setIsVoiceModeOpen(true)}
+              onClick={openVoiceMode}
               className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-auto sm:px-3 sm:py-1.5 rounded-full text-[#c4c7c5] hover:text-white hover:bg-white/5 border border-white/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation"
               title="Start Live Voice Conversation"
             >
@@ -2741,7 +2763,7 @@ function App() {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setIsVoiceModeOpen(true)}
+                      onClick={openVoiceMode}
                       className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full border border-white/10 hover:border-white/20 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer touch-manipulation"
                       title="Start Live Voice Conversation"
                     >

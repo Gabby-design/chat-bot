@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { synthesizeGeminiVoice, stopGeminiVoice, GEMINI_VOICES, DEFAULT_GEMINI_VOICE } from '../utils/geminiVoice.js';
 
 // Anti-Self-Echo & Duplicate Filter: Prevents assistant from transcribing or replying to its own speaker output
-function isSelfEchoOrDuplicate(text, recentAssistantSpeeches = [], lastUserText = '') {
+function isSelfEchoOrDuplicate(text, recentAssistantSpeeches = [], lastUserText = '', isSpeaking = false) {
   if (!text || typeof text !== 'string') return true;
   const clean = text.toLowerCase().replace(/[^\w\s]/g, '').trim();
   if (!clean || clean.length < 2) return true;
@@ -20,7 +20,13 @@ function isSelfEchoOrDuplicate(text, recentAssistantSpeeches = [], lastUserText 
     }
   }
 
-  // 2. Filter echo of recent assistant utterances
+  // 2. ONLY filter echo of assistant utterances IF the assistant is actually speaking or just finished
+  if (!isSpeaking) {
+    // When assistant is silent, user is speaking freely. Never block user follow-ups!
+    return false;
+  }
+
+  // Assistant IS speaking: check if mic is transcribing speaker audio
   const userWords = clean.split(/\s+/).filter((w) => w.length > 2);
   if (userWords.length === 0) return false;
 
@@ -35,10 +41,7 @@ function isSelfEchoOrDuplicate(text, recentAssistantSpeeches = [], lastUserText 
     for (const w of userWords) {
       if (speechWordSet.has(w)) matchCount++;
     }
-    if (userWords.length <= 3 && matchCount >= 2) {
-      return true;
-    }
-    if (userWords.length > 3 && matchCount / userWords.length >= 0.5) {
+    if (userWords.length >= 2 && matchCount / userWords.length >= 0.8) {
       return true;
     }
   }
@@ -82,6 +85,13 @@ export default function VoiceModeModal({
   const lastSubmittedUserSpeechRef = useRef('');
   const lastSubmittedTimeRef = useRef(0);
   const resumeListeningTimerRef = useRef(null);
+
+  // Fresh props and callbacks refs to eliminate stale closure traps across turns
+  const onSendMessageRef = useRef(onSendMessage);
+  onSendMessageRef.current = onSendMessage;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const handleUserSubmitRef = useRef(null);
 
   // Web Audio API & Analyser refs for real-time reactivity
   const audioContextRef = useRef(null);
@@ -538,7 +548,7 @@ export default function VoiceModeModal({
         if (!currentText) return;
 
         // Anti-Self-Echo & Duplicate Transcription Filter
-        if (isSelfEchoOrDuplicate(currentText, recentAssistantTextsRef.current, lastSubmittedUserSpeechRef.current)) {
+        if (isSelfEchoOrDuplicate(currentText, recentAssistantTextsRef.current, lastSubmittedUserSpeechRef.current, isAssistantSpeakingRef.current || voiceStateRef.current === 'speaking')) {
           return;
         }
 
@@ -584,7 +594,11 @@ export default function VoiceModeModal({
             !isAssistantSpeakingRef.current
           ) {
             silenceTimeoutRef.current = null;
-            handleUserSubmit(currentText);
+            if (handleUserSubmitRef.current) {
+              handleUserSubmitRef.current(currentText);
+            } else {
+              handleUserSubmit(currentText);
+            }
           }
         }, silenceDuration);
       };
@@ -668,7 +682,7 @@ export default function VoiceModeModal({
       silenceTimeoutRef.current = null;
     }
 
-    if (isSelfEchoOrDuplicate(spokenText, recentAssistantTextsRef.current, lastSubmittedUserSpeechRef.current)) {
+    if (isSelfEchoOrDuplicate(spokenText, recentAssistantTextsRef.current, lastSubmittedUserSpeechRef.current, isAssistantSpeakingRef.current || voiceStateRef.current === 'speaking')) {
       console.warn('[Voice Mode] Dropped self-echo submission:', spokenText);
       setTranscript('');
       return;
@@ -692,7 +706,8 @@ export default function VoiceModeModal({
     try {
       let accumulatedResponse = '';
 
-      await onSendMessage(spokenText, (chunkText, fullText, isDone) => {
+      const sendFn = onSendMessageRef.current || onSendMessage;
+      await sendFn(spokenText, (chunkText, fullText, isDone) => {
         if (isShuttingDownRef.current) return;
 
         if (fullText) {
@@ -718,6 +733,7 @@ export default function VoiceModeModal({
       startListening();
     }
   };
+  handleUserSubmitRef.current = handleUserSubmit;
 
   // Synthesize and play audio with Gemini Neural Audio, with automatic fallback to Device TTS
   const playGeminiResponse = async (text) => {

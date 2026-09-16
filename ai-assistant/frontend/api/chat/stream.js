@@ -120,7 +120,7 @@ SPOKEN VOICE DELIVERY RULES:
     generationConfig = {
       temperature: 0.5,
       topP: 0.9,
-      maxOutputTokens: 200
+      maxOutputTokens: 2048
     };
   } else if (model === 'advanced') {
     primaryModel = 'gemini-2.5-pro';
@@ -134,18 +134,48 @@ SPOKEN VOICE DELIVERY RULES:
 
   const modelsToTry = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
 
+  // 1. Sanitize conversation history into clean alternating user / model turns
+  const cleanHistory = [];
+  const rawHistory = Array.isArray(conversationHistory) ? conversationHistory : [];
+  for (const m of rawHistory) {
+    if (!m || !m.content || typeof m.content !== 'string' || !m.content.trim()) continue;
+    if (m.isInProgress) continue;
+    const role = (m.role === 'assistant' || m.role === 'model') ? 'model' : 'user';
+    cleanHistory.push({ role, text: m.content.trim() });
+  }
+
+  // If the last turn in cleanHistory already matches the current user query, pop it
+  // to avoid duplicating the user query and violating Gemini's alternating turn constraint
+  if (cleanHistory.length > 0 && cleanHistory[cleanHistory.length - 1].role === 'user') {
+    const lastUserText = cleanHistory[cleanHistory.length - 1].text.toLowerCase().trim();
+    const currentQueryText = (userQuery || '').toLowerCase().trim();
+    if (lastUserText === currentQueryText || (currentQueryText && lastUserText.includes(currentQueryText))) {
+      cleanHistory.pop();
+    }
+  }
+
+  // Retain up to 24 recent messages for rich conversational context
+  const recent = cleanHistory.slice(-24);
+
   const contents = [];
-  const recent = Array.isArray(conversationHistory) ? conversationHistory.slice(-10) : [];
-  for (const m of recent) {
-    if (m?.content && (m.role === 'user' || m.role === 'assistant')) {
+  for (const item of recent) {
+    if (contents.length > 0 && contents[contents.length - 1].role === item.role) {
+      // Merge consecutive identical roles to adhere to Gemini's strict alternation
+      contents[contents.length - 1].parts[0].text += `\n\n${item.text}`;
+    } else {
       contents.push({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
+        role: item.role,
+        parts: [{ text: item.text }]
       });
     }
   }
 
-  // Multimodal Vision + Grounded Context
+  // Gemini requires multi-turn contents to start with 'user'
+  while (contents.length > 0 && contents[0].role !== 'user') {
+    contents.shift();
+  }
+
+  // Multimodal Vision + Grounded Context for the new turn
   const userParts = [];
   if (attachedImage?.base64 && attachedImage?.mimeType) {
     userParts.push({
@@ -165,10 +195,16 @@ SPOKEN VOICE DELIVERY RULES:
   }
   userParts.push({ text: finalPrompt });
 
-  contents.push({
-    role: 'user',
-    parts: userParts
-  });
+  // If contents currently ends with 'user', merge with it rather than pushing another 'user'
+  if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
+    const prevText = contents[contents.length - 1].parts[0]?.text || '';
+    contents[contents.length - 1].parts[0].text = `${prevText}\n\n${finalPrompt}`;
+  } else {
+    contents.push({
+      role: 'user',
+      parts: userParts
+    });
+  }
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');

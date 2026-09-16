@@ -199,6 +199,10 @@ async function streamGeminiDirect({
 function App() {
   // State
   const [messages, setMessages] = useState([]);
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -267,6 +271,10 @@ function App() {
     return [];
   });
   const [currentChatId, setCurrentChatId] = useState(null);
+  const currentChatIdRef = useRef(currentChatId);
+  useEffect(() => {
+    currentChatIdRef.current = currentChatId;
+  }, [currentChatId]);
 
   // My Stuff state
   const [isMyStuffOpen, setIsMyStuffOpen] = useState(false);
@@ -1046,7 +1054,7 @@ function App() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    const historyForModel = messageHistory || messages;
+    const historyForModel = messageHistory || messagesRef.current || messages;
     isAutoScrollEnabledRef.current = true;
 
     // Resolve active real-time context (time + location/weather if available)
@@ -1299,17 +1307,21 @@ function App() {
     };
 
     // 1. Assign or reuse activeChatId synchronously without any network delay
-    let activeChatId = currentChatId;
+    let activeChatId = currentChatIdRef.current || currentChatId;
     const isNew = !activeChatId;
     if (!activeChatId) {
       activeChatId = 'chat-' + Date.now();
+      currentChatIdRef.current = activeChatId;
       setCurrentChatId(activeChatId);
     }
 
     const convTitle = generateConversationTitle(promptText || (currentImg ? 'Image Analysis' : 'New Chat'));
 
     // 2. Append user message & reset input immediately
-    const updatedHistory = [...messages, userMsg];
+    const priorHistory = (messagesRef.current || messages || [])
+      .filter((m) => m && m.content && !m.isInProgress && (m.role === 'user' || m.role === 'assistant'));
+    const updatedHistory = [...priorHistory, userMsg];
+    messagesRef.current = updatedHistory;
     setMessages(updatedHistory);
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -1361,16 +1373,23 @@ function App() {
     const userMsg = { role: 'user', content: spokenText.trim() };
     const assistantMsg = { role: 'assistant', content: '', isInProgress: true };
 
-    let activeChatId = currentChatId;
+    let activeChatId = currentChatIdRef.current || currentChatId;
     const isNew = !activeChatId;
     if (!activeChatId) {
       activeChatId = 'chat-' + Date.now();
+      currentChatIdRef.current = activeChatId;
       setCurrentChatId(activeChatId);
     }
     const convTitle = generateConversationTitle(spokenText.trim());
 
+    // Pull the clean previous history from messagesRef to preserve multi-turn memory
+    const priorHistory = (messagesRef.current || messages || [])
+      .filter((m) => m && m.content && !m.isInProgress && (m.role === 'user' || m.role === 'assistant'));
+
     // Append separate user and assistant bubbles immediately
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    const updatedHistory = [...priorHistory, userMsg, assistantMsg];
+    messagesRef.current = updatedHistory;
+    setMessages(updatedHistory);
 
     setIsLoading(true);
     setIsStreaming(true);
@@ -1395,7 +1414,7 @@ function App() {
             chat_id: activeChatId || undefined,
             mode: 'voice',
             model: 'gemini-3.6-flash',
-            conversationHistory: messages,
+            conversationHistory: priorHistory,
             locationContext: locSummary
           }),
           signal: controller.signal
@@ -1408,7 +1427,7 @@ function App() {
         // Fallback to streamGeminiDirect
         await streamGeminiDirect({
           prompt: spokenText,
-          conversationHistory: messages,
+          conversationHistory: priorHistory,
           modelSelection: 'gemini-3.6-flash',
           mode: 'voice',
           activeGem,
@@ -1472,9 +1491,11 @@ function App() {
                 if (finalized.length > 0 && finalized[finalized.length - 1].role === 'assistant') {
                   finalized[finalized.length - 1] = {
                     ...finalized[finalized.length - 1],
+                    content: streamed,
                     isInProgress: false
                   };
                 }
+                messagesRef.current = finalized;
                 saveChatLocally(activeChatId, finalized, isNew ? convTitle : null);
                 return finalized;
               });
@@ -1482,7 +1503,8 @@ function App() {
             }
             try {
               const parsed = JSON.parse(data);
-              if (parsed.chat_id && !currentChatId) {
+              if (parsed.chat_id && !currentChatIdRef.current) {
+                currentChatIdRef.current = parsed.chat_id;
                 setCurrentChatId(parsed.chat_id);
               }
               if (parsed.error) {
@@ -1512,6 +1534,7 @@ function App() {
                       content: (updated[lastIdx].content || '') + newToken
                     };
                   }
+                  messagesRef.current = updated;
                   return updated;
                 });
               }
@@ -1525,9 +1548,11 @@ function App() {
         if (finalized.length > 0 && finalized[finalized.length - 1].role === 'assistant') {
           finalized[finalized.length - 1] = {
             ...finalized[finalized.length - 1],
+            content: streamed,
             isInProgress: false
           };
         }
+        messagesRef.current = finalized;
         saveChatLocally(activeChatId, finalized, isNew ? convTitle : null);
         return finalized;
       });

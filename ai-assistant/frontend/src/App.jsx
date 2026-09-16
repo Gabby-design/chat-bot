@@ -14,7 +14,8 @@ import {
   fetchWeatherAndPlace,
   getCachedLocationWeather,
   clearLocationWeatherCache,
-  isWeatherOrLocationQuery
+  isWeatherOrLocationQuery,
+  getUserRealtimeContext
 } from './utils/locationService.js';
 import {
   playGeminiVoice,
@@ -1467,9 +1468,9 @@ function App() {
     const historyForModel = messageHistory || messages;
     isAutoScrollEnabledRef.current = true;
 
-    // Resolve active location & weather context
+    // Resolve active real-time context (time + location/weather if available)
     const activeLocation = forcedLocation !== undefined ? forcedLocation : (locationWeatherRef.current || locationWeather);
-    const locationContextStr = activeLocation?.summary ? activeLocation.summary : null;
+    const locationContextStr = getUserRealtimeContext(activeLocation);
 
     // 1. Search Grounding Pass (when Search toggle is active)
     let searchResults = [];
@@ -1790,7 +1791,7 @@ function App() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    const locSummary = (locationWeatherRef.current || locationWeather)?.summary || null;
+    const locSummary = getUserRealtimeContext(locationWeatherRef.current || locationWeather);
     let streamed = '';
 
     try {

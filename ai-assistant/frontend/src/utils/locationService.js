@@ -241,3 +241,100 @@ export function isWeatherOrLocationQuery(text) {
   const pattern = /\b(weather|temperature|forecast|rain(ing|y)?|sunny|umbrella|humid(ity)?|cold outside|hot outside|cloudy|snow(ing|y)?|near me|nearby|nearest|closest|around here|where am i|my (current )?location|places near|local time)\b/i;
   return pattern.test(q);
 }
+
+/**
+ * Formats the user's current local device time, timezone, and date using new Date().
+ * Requires ZERO permissions because browser Date() inherently uses the user's local clock.
+ * @param {Date} [date=new Date()]
+ * @returns {{ time: string, timeWithZone: string, date: string, timeZone: string }}
+ */
+export function getUserFormattedTime(date = new Date()) {
+  let timeWithZone = '';
+  let time = '';
+  let timeZone = '';
+  let dateStr = '';
+
+  try {
+    timeWithZone = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZoneName: 'short'
+    }).format(date);
+  } catch (e) {
+    timeWithZone = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  try {
+    time = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    }).format(date);
+  } catch (e) {
+    time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  try {
+    timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  } catch (e) {}
+
+  try {
+    dateStr = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    }).format(date);
+  } catch (e) {
+    dateStr = date.toDateString();
+  }
+
+  return { time, timeWithZone, date: dateStr, timeZone };
+}
+
+/**
+ * Builds the user's real-time context string injected into model turns.
+ * Always includes local device time and timezone; when location/weather is available,
+ * formats e.g. "User's time: 2:14 PM WAT. Location: Wuse, Abuja. Weather: 23°C, cloudy."
+ * @param {object|null} locationWeather
+ * @returns {string}
+ */
+export function getUserRealtimeContext(locationWeather = null) {
+  const { timeWithZone, date } = getUserFormattedTime();
+
+  if (locationWeather && locationWeather.location && locationWeather.weather) {
+    const loc = locationWeather.location;
+    const w = locationWeather.weather;
+    const placeName = loc.formatted || loc.city || 'User location';
+    const temp = w.temperature != null ? `${w.temperature}°C` : '20°C';
+    const cond = w.condition ? w.condition.toLowerCase() : 'current conditions';
+    return `[USER REAL-TIME CONTEXT]:\nUser's time: ${timeWithZone} (${date}). Location: ${placeName}. Weather: ${temp}, ${cond}.`;
+  }
+
+  return `[USER REAL-TIME CONTEXT]:\nUser's time: ${timeWithZone} (${date}).`;
+}
+
+/**
+ * Standard configuration for real-time turn detection (Gemini Live API / OpenAI Realtime API specs)
+ */
+export function getRealtimeTurnDetectionConfig() {
+  return {
+    geminiLiveConfig: {
+      realtime_input_config: {
+        automatic_activity_detection: {
+          end_of_speech_sensitivity: "LOW",
+          silence_duration_ms: 900
+        }
+      }
+    },
+    openAiRealtimeConfig: {
+      turn_detection: {
+        type: "semantic_vad",
+        eagerness: "low",
+        interrupt_response: true,
+        silence_duration_ms: 900
+      }
+    }
+  };
+}

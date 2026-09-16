@@ -168,7 +168,7 @@ export async function synthesizeGeminiVoice(rawText, { voice = DEFAULT_GEMINI_VO
   throw new Error('Could not synthesize Gemini voice audio.');
 }
 
-// Stops any currently playing audio immediately
+// Stops and flushes any currently playing audio immediately
 export function stopGeminiVoice() {
   if (currentAbortController) {
     currentAbortController.abort();
@@ -178,7 +178,8 @@ export function stopGeminiVoice() {
     try {
       currentAudio.pause();
       currentAudio.currentTime = 0;
-      currentAudio.src = '';
+      currentAudio.removeAttribute('src');
+      currentAudio.load(); // Forces browser to flush decoded PCM buffer immediately
     } catch (e) {}
     currentAudio = null;
   }

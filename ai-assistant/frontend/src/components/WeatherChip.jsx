@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sun, CloudSun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, CloudDrizzle, X, RefreshCw, MapPin, Wind, Droplets, Thermometer, ChevronDown } from 'lucide-react';
+import { Sun, CloudSun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, CloudDrizzle, X, RefreshCw, MapPin, Wind, Droplets, Thermometer, ChevronDown, Clock } from 'lucide-react';
+import { getUserFormattedTime } from '../utils/locationService.js';
 
 const ICON_MAP = {
   Sun,
@@ -44,6 +45,7 @@ export default function WeatherChip({
   const IconComponent = ICON_MAP[weather.iconName] || CloudSun;
   const displayCity = location?.city || location?.formatted?.split(',')[0] || 'Local';
   const temp = weather.temperature;
+  const localTimeInfo = getUserFormattedTime();
 
   const handleRefreshClick = async (e) => {
     e.stopPropagation();
@@ -128,11 +130,19 @@ export default function WeatherChip({
               </div>
             </div>
 
-            <div className="p-2 rounded-xl bg-white/[0.03] border border-white/5 flex items-center gap-2 col-span-2">
+            <div className="p-2 rounded-xl bg-white/[0.03] border border-white/5 flex items-center gap-2">
               <Wind size={14} className="text-emerald-400 shrink-0" />
               <div>
                 <span className="text-gray-400 block text-[10px]">Wind speed</span>
                 <span className="font-medium text-white">{weather.windSpeed != null ? `${weather.windSpeed} km/h` : 'Light breeze'}</span>
+              </div>
+            </div>
+
+            <div className="p-2 rounded-xl bg-white/[0.03] border border-white/5 flex items-center gap-2">
+              <Clock size={14} className="text-amber-400 shrink-0" />
+              <div>
+                <span className="text-gray-400 block text-[10px]">Local Time</span>
+                <span className="font-medium text-white truncate">{localTimeInfo.timeWithZone}</span>
               </div>
             </div>
           </div>

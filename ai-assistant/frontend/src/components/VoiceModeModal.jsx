@@ -225,7 +225,7 @@ export default function VoiceModeModal({
           let micSum = 0;
           for (let i = 0; i < micBuffer.length; i++) micSum += micBuffer[i];
           const micAvg = micSum / micBuffer.length;
-          if (micAvg > 35) {
+          if (micAvg > 28) {
             handleInterrupt();
             return;
           }
@@ -317,13 +317,17 @@ export default function VoiceModeModal({
     if (ttsAudioRef.current) {
       try {
         ttsAudioRef.current.pause();
-        ttsAudioRef.current.src = '';
+        ttsAudioRef.current.currentTime = 0;
+        ttsAudioRef.current.removeAttribute('src');
+        ttsAudioRef.current.load();
       } catch (e) {}
     }
     if (activeAudioRef.current && activeAudioRef.current !== ttsAudioRef.current) {
       try {
         activeAudioRef.current.pause();
-        activeAudioRef.current.src = '';
+        activeAudioRef.current.currentTime = 0;
+        activeAudioRef.current.removeAttribute('src');
+        activeAudioRef.current.load();
       } catch (e) {}
     }
     activeAudioRef.current = null;
@@ -364,7 +368,7 @@ export default function VoiceModeModal({
     if (onClose) onClose();
   };
 
-  // Instant interruption: halts audio playback or synthesis and resumes listening
+  // Instant interruption (barge-in): halts generation, flushes client audio player buffers, and resumes listening
   const handleInterrupt = () => {
     if (resumeListeningTimerRef.current) {
       clearTimeout(resumeListeningTimerRef.current);
@@ -372,16 +376,21 @@ export default function VoiceModeModal({
     }
     isAssistantSpeakingRef.current = false;
 
+    // Explicitly pause and flush client-side audio player so no buffered words play
     if (ttsAudioRef.current) {
       try {
         ttsAudioRef.current.pause();
-        ttsAudioRef.current.src = '';
+        ttsAudioRef.current.currentTime = 0;
+        ttsAudioRef.current.removeAttribute('src');
+        ttsAudioRef.current.load(); // Purges decoded PCM buffer immediately
       } catch (e) {}
     }
     if (activeAudioRef.current && activeAudioRef.current !== ttsAudioRef.current) {
       try {
         activeAudioRef.current.pause();
-        activeAudioRef.current.src = '';
+        activeAudioRef.current.currentTime = 0;
+        activeAudioRef.current.removeAttribute('src');
+        activeAudioRef.current.load();
       } catch (e) {}
     }
     activeAudioRef.current = null;
@@ -508,11 +517,7 @@ export default function VoiceModeModal({
       };
 
       recognition.onresult = (event) => {
-        if (
-          isShuttingDownRef.current ||
-          isAssistantSpeakingRef.current ||
-          voiceStateRef.current === 'speaking'
-        ) {
+        if (isShuttingDownRef.current) {
           return;
         }
 
@@ -532,15 +537,14 @@ export default function VoiceModeModal({
 
         // Anti-Self-Echo & Duplicate Transcription Filter
         if (isSelfEchoOrDuplicate(currentText, recentAssistantTextsRef.current, lastSubmittedUserSpeechRef.current)) {
-          console.warn('[Voice Mode] Ignored self-echo or duplicate transcript:', currentText);
           return;
         }
 
-        // Barge-in during processing
-        if (voiceStateRef.current === 'processing') {
-          if (onAbort) onAbort();
-          setCurrentAssistantSpeech('');
-          updateVoiceState('listening');
+        // Barge-in (Interruption): If assistant is speaking or processing, immediately halt generation,
+        // flush the client-side audio player, and switch to listening!
+        if (voiceStateRef.current === 'speaking' || isAssistantSpeakingRef.current || voiceStateRef.current === 'processing') {
+          console.log('[Voice Mode] Speech detected during assistant turn, interrupting.');
+          handleInterrupt();
         }
 
         setTranscript(currentText);
@@ -556,7 +560,21 @@ export default function VoiceModeModal({
           return;
         }
 
-        // Silence detection: submit speech after 700ms of quiet
+        // Adaptive Turn Detection / Semantic VAD:
+        // Eagerness "low" behavior: trailing hesitation or incomplete conjunctions get 1800ms
+        // Base silence timeout raised from 700ms to 950ms to prevent premature cutoffs
+        const words = currentText.trim().split(/\s+/);
+        const hasTrailingHesitation = /\b(umm*|uhh*|err*|er|ah|and|or|but|so|because|like|with|to|if|when|that|which|then|also|is|are|was|were)\s*$/i.test(currentText);
+
+        let silenceDuration = 950;
+        if (hasTrailingHesitation) {
+          silenceDuration = 1800; // Wait longer for trailed-off "umm...", "and...", "so..."
+        } else if (words.length <= 2) {
+          silenceDuration = 1200; // Wait for user to formulate next words
+        } else if (/[.?!]$/.test(currentText)) {
+          silenceDuration = 850; // Completed sentence with terminal punctuation
+        }
+
         silenceTimeoutRef.current = setTimeout(() => {
           if (
             voiceStateRef.current === 'listening' &&
@@ -566,7 +584,7 @@ export default function VoiceModeModal({
             silenceTimeoutRef.current = null;
             handleUserSubmit(currentText);
           }
-        }, 700);
+        }, silenceDuration);
       };
 
       recognition.onerror = (event) => {
@@ -752,8 +770,14 @@ export default function VoiceModeModal({
     }
 
     // Fallback: If Gemini Neural Voice failed (quota limit, network error) or mobile autoplay blocked it,
-    // speak seamlessly using device native speech synthesis (Siri on iOS / Google Voice on Android)!
-    if (!playedViaGemini && isMountedRef.current && !isShuttingDownRef.current) {
+    // and the user has NOT interrupted, speak seamlessly using device native speech synthesis!
+    if (
+      !playedViaGemini &&
+      isMountedRef.current &&
+      !isShuttingDownRef.current &&
+      voiceStateRef.current === 'speaking' &&
+      isAssistantSpeakingRef.current
+    ) {
       try {
         await speakWithDeviceSynthesis(text);
       } catch (deviceErr) {
@@ -764,7 +788,7 @@ export default function VoiceModeModal({
     activeAudioRef.current = null;
     isAssistantSpeakingRef.current = false;
 
-    if (isMountedRef.current && !isShuttingDownRef.current) {
+    if (isMountedRef.current && !isShuttingDownRef.current && voiceStateRef.current === 'speaking') {
       setCurrentAssistantSpeech('');
       if (resumeListeningTimerRef.current) {
         clearTimeout(resumeListeningTimerRef.current);

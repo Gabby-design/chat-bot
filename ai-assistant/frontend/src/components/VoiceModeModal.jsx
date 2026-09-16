@@ -995,6 +995,10 @@ export default function VoiceModeModal({
               <span className="text-xs font-medium text-rose-400">
                 Microphone muted • Tap mic below to speak
               </span>
+            ) : voiceState === 'idle' ? (
+              <span className="text-xs font-medium text-slate-400">
+                Ready • Tap orb to speak
+              </span>
             ) : (
               <span className="text-xs font-medium text-[#70CFFF]">
                 {transcript ? 'Listening...' : isMobile ? 'Listening • Tap orb to speak' : 'Listening... speak anytime'}

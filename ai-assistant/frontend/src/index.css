@@ -912,7 +912,7 @@ button:focus-visible {
   border-radius: 50%;
 }
 
-/* ChatGPT-Style Fluid Living Voice Orb */
+/* ChatGPT-Style Fluid Living Voice Orb with Multi-State Smooth Transitions */
 .voice-orb-container {
   position: relative;
   width: 140px;
@@ -922,21 +922,20 @@ button:focus-visible {
   justify-content: center;
   --level: 0;
   transform: scale(calc(1 + var(--level, 0) * 0.32)) translateZ(0);
-  filter: brightness(calc(1 + var(--level, 0) * 0.55)) drop-shadow(0 0 calc(18px + var(--level, 0) * 45px) rgba(56, 189, 248, calc(0.35 + var(--level, 0) * 0.55)));
-  transition: transform 0.08s ease-out, filter 0.08s ease-out;
+  transition: transform 0.12s ease-out, filter 0.25s ease-out;
   will-change: transform, filter;
 }
 
+/* Base Orb */
 .voice-orb {
   position: relative;
   width: 120px;
   height: 120px;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #7dd3fc, #3b82f6 45%, #1e3a8a 100%);
   filter: blur(1.5px);
-  animation: orb-breathe 3s ease-in-out infinite;
   transform: translateZ(0);
-  will-change: transform;
+  transition: background 0.45s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, background, box-shadow;
 }
 
 .voice-orb::before,
@@ -945,17 +944,105 @@ button:focus-visible {
   position: absolute;
   inset: -12%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(147, 197, 253, 0.55), transparent 60%);
   filter: blur(14px);
-  animation: orb-swirl 7s linear infinite;
   transform: translateZ(0);
-  will-change: transform;
+  transition: background 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, background;
 }
 
-.voice-orb::after {
+/* 1. IDLE STATE: Calm, subtle resting glow */
+.voice-orb-container.state-idle {
+  filter: brightness(1) drop-shadow(0 0 20px rgba(148, 163, 184, 0.35));
+}
+.voice-orb-container.state-idle .voice-orb {
+  background: radial-gradient(circle at 35% 35%, #94a3b8, #475569 45%, #1e293b 100%);
+  animation: orb-breathe 4s ease-in-out infinite;
+}
+.voice-orb-container.state-idle .voice-orb::before,
+.voice-orb-container.state-idle .voice-orb::after {
+  background: radial-gradient(circle, rgba(148, 163, 184, 0.4), transparent 65%);
+  animation: orb-swirl 12s linear infinite;
+  opacity: 0.5;
+}
+
+/* 2. LISTENING STATE: Dynamic reactive electric cyan/blue glow with mic audio reactivity */
+.voice-orb-container.state-listening {
+  filter: brightness(calc(1 + var(--level, 0) * 0.55)) drop-shadow(0 0 calc(20px + var(--level, 0) * 50px) rgba(56, 189, 248, calc(0.45 + var(--level, 0) * 0.55)));
+}
+.voice-orb-container.state-listening .voice-orb {
+  background: radial-gradient(circle at 30% 30%, #7dd3fc, #38bdf8 40%, #2563eb 75%, #1e3a8a 100%);
+  animation: orb-breathe 2.5s ease-in-out infinite;
+}
+.voice-orb-container.state-listening .voice-orb::before,
+.voice-orb-container.state-listening .voice-orb::after {
+  background: radial-gradient(circle, rgba(125, 211, 252, 0.65), transparent 60%);
+  animation: orb-swirl 6s linear infinite;
+}
+.voice-orb-container.state-listening .voice-orb::after {
   animation-direction: reverse;
-  animation-duration: 9s;
-  opacity: 0.6;
+  animation-duration: 8s;
+  opacity: 0.7;
+}
+
+/* 3. PROCESSING STATE: Swirling mystical purple/violet thought state */
+.voice-orb-container.state-processing {
+  filter: brightness(1.2) drop-shadow(0 0 35px rgba(192, 132, 252, 0.6));
+}
+.voice-orb-container.state-processing .voice-orb {
+  background: radial-gradient(circle at 30% 30%, #e9d5ff, #a855f7 40%, #7e22ce 75%, #3b0764 100%);
+  animation: orb-think 1.4s ease-in-out infinite;
+}
+.voice-orb-container.state-processing .voice-orb::before,
+.voice-orb-container.state-processing .voice-orb::after {
+  background: radial-gradient(circle, rgba(216, 180, 254, 0.75), transparent 60%);
+  animation: orb-swirl 3.5s linear infinite;
+}
+.voice-orb-container.state-processing .voice-orb::after {
+  animation-direction: reverse;
+  animation-duration: 4.5s;
+}
+
+/* 4. SPEAKING STATE: Warm glowing rose/magenta/coral that dances with assistant voice */
+.voice-orb-container.state-speaking {
+  filter: brightness(calc(1.1 + var(--level, 0) * 0.5)) drop-shadow(0 0 calc(24px + var(--level, 0) * 55px) rgba(244, 63, 94, calc(0.5 + var(--level, 0) * 0.5)));
+}
+.voice-orb-container.state-speaking .voice-orb {
+  background: radial-gradient(circle at 30% 30%, #fecdd3, #f43f5e 40%, #be123c 75%, #4c0519 100%);
+  animation: orb-breathe 2s ease-in-out infinite;
+}
+.voice-orb-container.state-speaking .voice-orb::before,
+.voice-orb-container.state-speaking .voice-orb::after {
+  background: radial-gradient(circle, rgba(253, 164, 175, 0.7), transparent 60%);
+  animation: orb-swirl 5s linear infinite;
+}
+.voice-orb-container.state-speaking .voice-orb::after {
+  animation-direction: reverse;
+  animation-duration: 7s;
+  opacity: 0.8;
+}
+
+/* 5. MUTED STATE: Subdued amber/zinc with warning glow */
+.voice-orb-container.state-muted {
+  filter: brightness(0.85) drop-shadow(0 0 15px rgba(244, 63, 94, 0.25));
+}
+.voice-orb-container.state-muted .voice-orb {
+  background: radial-gradient(circle at 35% 35%, #71717a, #3f3f46 60%, #18181b 100%);
+  animation: none;
+}
+.voice-orb-container.state-muted .voice-orb::before,
+.voice-orb-container.state-muted .voice-orb::after {
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.2), transparent 70%);
+  animation: none;
+  opacity: 0.3;
+}
+
+@keyframes orb-think {
+  0%, 100% {
+    transform: scale(0.96) translateZ(0);
+  }
+  50% {
+    transform: scale(1.06) translateZ(0);
+  }
 }
 
 @keyframes orb-breathe {

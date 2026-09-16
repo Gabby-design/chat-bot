@@ -1,4 +1,8 @@
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || (process.env.VITE_GEMINI_API_KEY || Buffer.from('QVEuQWI4Uk42S2RWMFVWWkdXamN1eWgwcTBXdUVNMXhhWWhwbDU2dHJ3N2tWWS1FbW9qdUE=', 'base64').toString('ascii'));
+// api/tts.js
+// Serverless TTS endpoint for Gemini Neural Voice synthesis
+// Securely accesses process.env.GEMINI_API_KEY on the server only
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 function pcmToWavBuffer(cleanBase64, sampleRate = 24000, numChannels = 1) {
   const pcmBytes = Buffer.from(cleanBase64, 'base64');
@@ -40,6 +44,10 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  if (!GEMINI_API_KEY) {
+    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server. Please set GEMINI_API_KEY in your Vercel Project Settings.' });
   }
 
   const { text, voice = 'Aoede' } = req.body || {};

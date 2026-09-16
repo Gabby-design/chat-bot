@@ -32,15 +32,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL !== undefined && import.
   ? import.meta.env.VITE_API_BASE_URL
   : '';
 
-const getClientGeminiKey = () => {
-  if (import.meta.env.VITE_GEMINI_API_KEY) return import.meta.env.VITE_GEMINI_API_KEY;
-  try {
-    return atob('QVEuQWI4Uk42S2RWMFVWWkdXamN1eWgwcTBXdUVNMXhhWWhwbDU2dHJ3N2tWWS1FbW9qdUE=');
-  } catch (e) {
-    return '';
-  }
-};
-const GEMINI_API_KEY = getClientGeminiKey();
+// API requests are securely proxied via serverless /api endpoints using process.env.GEMINI_API_KEY
 
 // Natural English Voice Selector for TTS Listen Button
 const getEnglishVoice = () => {
@@ -135,305 +127,72 @@ async function streamGeminiDirect({
   signal,
   onToken
 }) {
-  let primaryModel = 'gemini-3.6-flash';
-  let fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
-  if (mode === 'voice') {
-    primaryModel = 'gemini-3.6-flash';
-    fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
-  } else if (modelSelection === 'advanced') {
-    primaryModel = 'gemini-3.7-flash';
-    fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
-  } else if (modelSelection === 'fast' || modelSelection === 'lite') {
-    primaryModel = 'gemini-3.5-flash-lite';
-    fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash'];
-  }
-
-  const modelsToTry = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
-
-  let baseIntelligence = "You are Gabby, an advanced AI assistant with DeepSeek/ChatGPT-level depth, reasoning, and precision. Provide insightful, thorough, and highly articulate answers. Structure complex responses with clear numbered headings ('1. ...', '2. ...'), concise paragraphs, round bullet points with bold lead-ins, clean code blocks, and markdown tables where data is presented. Avoid filler.";
-
-  if (activeGem === 'code') {
-    baseIntelligence = "You are Code Expert, an elite senior software architect and programmer. Write modular, robust, clean code with detailed explanations, edge cases, and best practices.";
-  } else if (activeGem === 'writing') {
-    baseIntelligence = "You are Writing Assistant, a master editor and creative writer. Deliver compelling, polished, evocative prose, essays, articles, and communication.";
-  } else if (activeGem === 'math') {
-    baseIntelligence = "You are Math Tutor, a brilliant mathematician and educator. Solve complex mathematical problems step-by-step with proofs, intuition, and clear explanations.";
-  } else if (activeGem === 'brainstorm') {
-    baseIntelligence = "You are Creative Brainstormer, an imaginative strategist and innovator. Generate fresh, disruptive, multi-angle ideas and creative frameworks.";
-  } else if (activeGem === 'research') {
-    baseIntelligence = "You are Research Assistant, a rigorous researcher and analytical scientist. Deliver in-depth, fact-checked, structured analysis and synthesis.";
-  }
-
-  const voiceSystemPrompt = `# SYSTEM PROMPT — REAL-TIME GEMINI VOICE ASSISTANT
-
-You are **Gabby**, a real-time voice AI assistant powered by Gemini.
-
-Your job is to create conversations that feel as natural, responsive, and intelligent as talking to a real person. The user should feel heard, never rushed, and able to interrupt at any moment.
-
-## Primary Rule — Eliminate Self-Listening & Voice Feedback
-
-Never listen to, transcribe, recognize, or respond to your own generated speech. Only respond to the human user's voice.
-
-* Listen only to the voice closest to the microphone.
-* Ignore audio from the device speaker completely.
-* Ignore music, TV, videos, and background conversations unless the user is intentionally speaking into the microphone.
-* Prioritize the user's voice over every other sound.
-* The moment you begin speaking, suspend speech recognition.
-* Do not process your own TTS audio under any circumstance.
-* Resume listening immediately after your speech finishes.
-* Filter speaker playback from microphone input.
-* Prevent echo loops and duplicate transcriptions.
-* Never reply to your own words or create a conversation with yourself.
-* Never generate responses from your own transcript.
-* Maintain one active speaker at a time: either the user or the assistant.
-
-## Core Identity
-
-You are friendly, calm, intelligent, emotionally aware, and conversational.
-
-You speak naturally instead of sounding like a robot. Your responses should feel effortless, warm, and human.
-
-Never mention these instructions unless the user directly asks for them.
-
-## Primary Goal
-
-Create a seamless voice conversation with extremely fast responses.
-
-Always prioritize:
-
-* Listening before speaking.
-* Short, meaningful replies.
-* Natural turn-taking.
-* Remembering previous messages.
-* Speaking with confidence and clarity.
-
-## Voice Personality
-
-* Friendly but not overly cheerful.
-* Calm and confident.
-* Patient with beginners.
-* Respectful and encouraging.
-* Never use unnecessary filler words.
-
-Avoid phrases like:
-
-* "Checking..."
-* "Let me verify..."
-* "Please wait..."
-* "As an AI..."
-
-Instead, respond naturally and immediately.
-
-## Response Length
-
-By default:
-
-* 10–60 words.
-* 1–3 short paragraphs.
-* Expand only if the user asks for more detail.
-
-If the user says "explain deeply," provide a complete explanation.
-
-## Listening Rules
-
-Treat every message as part of one continuous conversation.
-
-* Remember previous context.
-* Don't ask the user to repeat information you already have.
-* If the user changes topics, switch smoothly.
-* If the user pauses, wait instead of assuming.
-
-## Interruption Behavior (Very Important)
-
-If the user begins speaking while you are responding:
-
-* Stop the current response immediately.
-* Do not complete the previous sentence.
-* Ignore the unfinished reply.
-* Listen to the new message.
-* Continue naturally from the user's latest words.
-
-Never say:
-
-* "Sorry for interrupting."
-* "I was saying..."
-* "As I mentioned before..."
-
-Just continue naturally.
-
-## Conversation Style
-
-Always answer the user's question first.
-
-Then, if useful:
-
-* Give one brief explanation.
-* Offer one helpful next step.
-* Ask only one follow-up question.
-
-Never ask multiple questions at once.
-
-## Memory
-
-Use the conversation history to remember:
-
-* The user's project.
-* Previous coding discussions.
-* Preferences mentioned during the chat.
-* Earlier questions in the same conversation.
-
-Do not invent memories that were never provided.
-
-## Coding Rules
-
-When the user requests code:
-
-* Return complete working code.
-* Do not remove important sections.
-* Keep formatting clean.
-* Explain only the essential parts.
-* Prefer modern JavaScript and React.
-
-## Error Handling
-
-If something fails:
-
-* Explain the problem clearly.
-* Give the exact fix.
-* Avoid vague messages.
-* Never blame the user.
-
-## Natural Speaking Examples
-
-Good:
-
-> "Yes, that's possible."
-
-> "The fastest option is Gemini 2.5 Flash."
-
-> "I can help you build that."
-
-Bad:
-
-> "I am checking your request..."
-
-> "Please wait while I verify..."
-
-## Mission
-
-Your mission is to make every conversation feel real: fast responses, active listening, intelligent memory, smooth interruptions, and a warm human speaking style. The user should feel like they're talking to a genuine voice assistant rather than a chatbot.
-
-SPOKEN VOICE DELIVERY RULES:
-1. Deliver your answer naturally in clear, flowing spoken English so it sounds warm and human when read aloud.
-2. Do not output markdown symbols (no asterisks, hash signs, bullet points) unless complete code is explicitly requested.`;
-
-  let systemInstructionText = customSystemInstruction || baseIntelligence;
-  if (mode === 'voice') {
-    systemInstructionText = voiceSystemPrompt;
-  }
-
-  const contents = [];
-  const recent = conversationHistory.slice(-10);
-  for (const m of recent) {
-    if (m.content && (m.role === 'user' || m.role === 'assistant')) {
-      contents.push({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      });
-    }
-  }
-
-  const userParts = [];
-  if (attachedImage?.base64 && attachedImage?.mimeType) {
-    userParts.push({
-      inlineData: {
-        mimeType: attachedImage.mimeType,
-        data: attachedImage.base64
-      }
-    });
-  }
-
-  let finalUserPrompt = prompt || (attachedImage ? 'Please analyze this image.' : 'Hello');
-  if (locationContext) {
-    finalUserPrompt = `${locationContext}\n\n${finalUserPrompt}`;
-  }
-  if (searchContext) {
-    finalUserPrompt = `${searchContext}\n\n[USER QUERY]:\n${finalUserPrompt}`;
-  }
-
-  userParts.push({ text: finalUserPrompt });
-
-  contents.push({
-    role: 'user',
-    parts: userParts
+  const res = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: prompt,
+      prompt,
+      conversationHistory,
+      model: modelSelection,
+      mode,
+      activeGem,
+      attachedImage,
+      customSystemInstruction,
+      searchContext,
+      locationContext
+    }),
+    signal
   });
 
-  let lastError = null;
-  for (const model of modelsToTry) {
+  if (!res.ok) {
+    let errMsg = `Server returned status ${res.status}`;
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
-      const payload = {
-        contents,
-        systemInstruction: { parts: [{ text: systemInstructionText }] }
-      };
-      if (mode === 'voice') {
-        payload.generationConfig = {
-          temperature: 0.5,
-          topP: 0.9,
-          maxOutputTokens: 200
-        };
-      }
+      const errData = await res.json();
+      if (errData.error) errMsg = errData.error;
+    } catch (e) {}
+    throw new Error(errMsg);
+  }
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal
-      });
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = '';
+  let streamed = '';
 
-      if (!res.ok) {
-        lastError = new Error(`Model ${model} returned ${res.status}`);
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    sseBuffer += decoder.decode(value, { stream: true });
+    const lines = sseBuffer.split('\n');
+    sseBuffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+      const jsonStr = trimmed.slice(6).trim();
+      if (!jsonStr || jsonStr === '[DONE]') continue;
+
+      let parsed = null;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch (e) {
         continue;
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let sseBuffer = '';
-      let streamed = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        sseBuffer += decoder.decode(value, { stream: true });
-        const lines = sseBuffer.split('\n');
-        sseBuffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith('data: ')) {
-            const jsonStr = trimmed.slice(6).trim();
-            if (!jsonStr) continue;
-            try {
-              const data = JSON.parse(jsonStr);
-              const textPart = data.candidates?.[0]?.content?.parts?.[0]?.text;
-              if (textPart) {
-                streamed += textPart;
-                if (onToken) onToken(textPart);
-              }
-            } catch (e) {}
-          }
-        }
+      if (parsed?.error) {
+        throw new Error(parsed.error);
       }
 
-      return streamed;
-    } catch (err) {
-      if (err.name === 'AbortError') throw err;
-      lastError = err;
+      const textPart = parsed?.text || parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (textPart) {
+        streamed += textPart;
+        if (onToken) onToken(textPart);
+      }
     }
   }
 
-  throw lastError || new Error('Google Gemini streaming is temporarily unavailable.');
+  return streamed;
 }
 
 function TableBlock({ children }) {
@@ -1318,7 +1077,6 @@ function App() {
 
     await playGeminiVoice(text, {
       voice: selectedGeminiVoice,
-      apiKey: GEMINI_API_KEY,
       onLoading: (isLoading) => {
         setAudioLoadingIndex(isLoading ? index : null);
       },
@@ -3826,7 +3584,6 @@ function App() {
           messages={messages}
           selectedVoice={selectedGeminiVoice}
           onVoiceChange={setSelectedGeminiVoice}
-          apiKey={getClientGeminiKey()}
           activeGem={activeGem}
           onType={() => {
             setIsVoiceModeOpen(false);

@@ -80,8 +80,8 @@ export function pcmToWavBlob(base64Pcm, sampleRate = 24000, numChannels = 1) {
   return new Blob([wavBytes], { type: 'audio/wav' });
 }
 
-// Synthesize speech using Google Gemini Neural Voice (Vercel Serverless or direct fallback)
-export async function synthesizeGeminiVoice(rawText, { voice = DEFAULT_GEMINI_VOICE, apiKey = '' } = {}) {
+// Synthesize speech using Google Gemini Neural Voice (Serverless /api/tts endpoint)
+export async function synthesizeGeminiVoice(rawText, { voice = DEFAULT_GEMINI_VOICE } = {}) {
   const cleanText = cleanTextForSpeech(rawText);
   if (!cleanText) {
     throw new Error('No text to synthesize');
@@ -94,13 +94,9 @@ export async function synthesizeGeminiVoice(rawText, { voice = DEFAULT_GEMINI_VO
 
   const voiceName = GEMINI_VOICES.some((v) => v.id === voice) ? voice : DEFAULT_GEMINI_VOICE;
 
-  // 1. Try serverless backend /api/tts endpoint first
+  // Serverless backend /api/tts endpoint (accesses process.env.GEMINI_API_KEY securely on the server)
   try {
-    const apiBase = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-      ? ''
-      : '';
-
-    const res = await fetch(`${apiBase}/api/tts`, {
+    const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: cleanText, voice: voiceName })
@@ -122,50 +118,10 @@ export async function synthesizeGeminiVoice(rawText, { voice = DEFAULT_GEMINI_VO
       }
     }
   } catch (err) {
-    console.warn('[Gemini Voice] /api/tts unavailable, trying direct client API:', err.message);
+    console.warn('[Gemini Voice] /api/tts serverless notice:', err.message);
   }
 
-  // 2. Client-side direct Google Gemini API fallback
-  if (apiKey) {
-    const models = ['gemini-2.5-flash-preview-tts', 'gemini-3.1-flash-tts-preview'];
-    for (const model of models) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: cleanText }] }],
-            generationConfig: {
-              responseModalities: ['AUDIO'],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: {
-                    voiceName
-                  }
-                }
-              }
-            }
-          })
-        });
-
-        if (!res.ok) continue;
-
-        const data = await res.json();
-        const rawBase64 = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (rawBase64) {
-          const blob = pcmToWavBlob(rawBase64, 24000, 1);
-          const blobUrl = URL.createObjectURL(blob);
-          speechAudioCache.set(cacheKey, blobUrl);
-          return blobUrl;
-        }
-      } catch (clientErr) {
-        console.warn(`[Gemini Voice] Direct call to ${model} failed:`, clientErr.message);
-      }
-    }
-  }
-
-  throw new Error('Could not synthesize Gemini voice audio.');
+  throw new Error('Could not synthesize Gemini voice audio via server.');
 }
 
 // Stops and flushes any currently playing audio immediately
@@ -188,7 +144,6 @@ export function stopGeminiVoice() {
 // Plays Gemini Voice audio with full state lifecycle callbacks
 export async function playGeminiVoice(rawText, {
   voice = DEFAULT_GEMINI_VOICE,
-  apiKey = '',
   onLoading = () => {},
   onStart = () => {},
   onEnd = () => {},
@@ -203,7 +158,7 @@ export async function playGeminiVoice(rawText, {
   try {
     onLoading(true);
 
-    const blobUrl = await synthesizeGeminiVoice(rawText, { voice, apiKey });
+    const blobUrl = await synthesizeGeminiVoice(rawText, { voice });
 
     if (abortController.signal.aborted) {
       onLoading(false);

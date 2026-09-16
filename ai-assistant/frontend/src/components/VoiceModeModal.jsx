@@ -51,8 +51,7 @@ export default function VoiceModeModal({
   onNewChat,
   messages = [],
   onType,
-  selectedVoice = DEFAULT_GEMINI_VOICE,
-  apiKey = ''
+  selectedVoice = DEFAULT_GEMINI_VOICE
 }) {
   const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
@@ -736,8 +735,7 @@ export default function VoiceModeModal({
       unlockAudioContextAndSpeech();
 
       const blobUrl = await synthesizeGeminiVoice(text, {
-        voice: selectedVoice,
-        apiKey
+        voice: selectedVoice
       });
 
       if (isShuttingDownRef.current || voiceStateRef.current !== 'speaking') {
@@ -976,7 +974,7 @@ export default function VoiceModeModal({
             type="button"
             ref={orbRef}
             onClick={handleOrbClick}
-            className="voice-orb-container cursor-pointer select-none border-none bg-transparent p-0 flex items-center justify-center focus:outline-none touch-manipulation"
+            className={`voice-orb-container state-${voiceState} cursor-pointer select-none border-none bg-transparent p-0 flex items-center justify-center focus:outline-none touch-manipulation`}
             title="Tap orb to talk or interrupt"
             aria-label="Tap orb to talk or interrupt"
           >

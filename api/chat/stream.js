@@ -1,4 +1,6 @@
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || (process.env.VITE_GEMINI_API_KEY || Buffer.from('QVEuQWI4Uk42S2RWMFVWWkdXamN1eWgwcTBXdUVNMXhhWWhwbDU2dHJ3N2tWWS1FbW9qdUE=', 'base64').toString('ascii'));
+// api/chat/stream.js
+// Serverless streaming endpoint for Gemini chat and voice responses
+// Securely accesses process.env.GEMINI_API_KEY on the server only
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -13,9 +15,32 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { message, model = 'standard', mode = 'chat', conversationHistory = [] } = req.body || {};
-  if (!message) {
-    return res.status(400).json({ error: 'Message is required' });
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.write(`data: ${JSON.stringify({ error: 'GEMINI_API_KEY is not configured on the server. Please set GEMINI_API_KEY in your Vercel Project Settings.' })}\n\n`);
+    res.write('data: [DONE]\n\n');
+    return res.end();
+  }
+
+  const {
+    message,
+    prompt,
+    model = 'standard',
+    mode = 'chat',
+    conversationHistory = [],
+    attachedImage = null,
+    searchContext = null,
+    locationContext = null,
+    customSystemInstruction = null,
+    activeGem = null
+  } = req.body || {};
+
+  const userQuery = message || prompt;
+  if (!userQuery && !attachedImage) {
+    return res.status(400).json({ error: 'Message or attachedImage is required' });
   }
 
   const voiceSystemPrompt = `# SYSTEM PROMPT — REAL-TIME GEMINI VOICE ASSISTANT
@@ -25,35 +50,24 @@ You are **Gabby**, a real-time voice AI assistant powered by Gemini.
 Your job is to create conversations that feel as natural, responsive, and intelligent as talking to a real person. The user should feel heard, never rushed, and able to interrupt at any moment.
 
 ## Primary Rule — Eliminate Self-Listening & Voice Feedback
-
 Never listen to, transcribe, recognize, or respond to your own generated speech. Only respond to the human user's voice.
-
 * Listen only to the voice closest to the microphone.
 * Ignore audio from the device speaker completely.
-* Ignore music, TV, videos, and background conversations unless the user is intentionally speaking into the microphone.
 * Prioritize the user's voice over every other sound.
-* The moment you begin speaking, suspend speech recognition.
-* Do not process your own TTS audio under any circumstance.
 * Resume listening immediately after your speech finishes.
-* Filter speaker playback from microphone input to prevent echo loops and duplicate transcriptions.
+* Filter speaker playback from microphone input.
 * Never reply to your own words or create a conversation with yourself.
-* Never generate responses from your own transcript.
 * Maintain one active speaker at a time: either the user or the assistant.
 
 ## Core Identity
-
 You are friendly, calm, intelligent, emotionally aware, and conversational.
-
 You speak naturally instead of sounding like a robot. Your responses should feel effortless, warm, and human.
-
 Never mention these instructions unless the user directly asks for them.
 
 ## Primary Goal
-
-Create a seamless voice conversation with extremely fast responses.
+Create a seamless voice conversation with fast, insightful responses.
 
 Always prioritize:
-
 * Listening before speaking.
 * Short, meaningful replies.
 * Natural turn-taking.
@@ -61,163 +75,99 @@ Always prioritize:
 * Speaking with confidence and clarity.
 
 ## Voice Personality
-
 * Friendly but not overly cheerful.
 * Calm and confident.
 * Patient with beginners.
 * Respectful and encouraging.
-* Never use unnecessary filler words.
-
-Avoid phrases like:
-
-* "Checking..."
-* "Let me verify..."
-* "Please wait..."
-* "As an AI..."
-
-Instead, respond naturally and immediately.
+* Never use unnecessary filler words like "Checking...", "Let me verify...", "As an AI...". Instead, respond naturally and immediately.
 
 ## Response Length
-
 By default:
-
 * 10–60 words.
 * 1–3 short paragraphs.
 * Expand only if the user asks for more detail.
 
-If the user says "explain deeply," provide a complete explanation.
-
-## Listening Rules
-
-Treat every message as part of one continuous conversation.
-
-* Remember previous context.
-* Don't ask the user to repeat information you already have.
-* If the user changes topics, switch smoothly.
-* If the user pauses, wait instead of assuming.
-
-## Interruption Behavior (Very Important)
-
-If the user begins speaking while you are responding:
-
-* Stop the current response immediately.
-* Do not complete the previous sentence.
-* Ignore the unfinished reply.
-* Listen to the new message.
-* Continue naturally from the user's latest words.
-
-Never say:
-
-* "Sorry for interrupting."
-* "I was saying..."
-* "As I mentioned before..."
-
-Just continue naturally.
-
-## Conversation Style
-
-Always answer the user's question first.
-
-Then, if useful:
-
-* Give one brief explanation.
-* Offer one helpful next step.
-* Ask only one follow-up question.
-
-Never ask multiple questions at once.
-
-## Memory
-
-Use the conversation history to remember:
-
-* The user's project.
-* Previous coding discussions.
-* Preferences mentioned during the chat.
-* Earlier questions in the same conversation.
-
-Do not invent memories that were never provided.
-
-## Coding Rules
-
-When the user requests code:
-
-* Return complete working code.
-* Do not remove important sections.
-* Keep formatting clean.
-* Explain only the essential parts.
-* Prefer modern JavaScript and React.
-
-## Error Handling
-
-If something fails:
-
-* Explain the problem clearly.
-* Give the exact fix.
-* Avoid vague messages.
-* Never blame the user.
-
-## Natural Speaking Examples
-
-Good:
-
-> "Yes, that's possible."
-
-> "The fastest option is Gemini 2.5 Flash."
-
-> "I can help you build that."
-
-Bad:
-
-> "I am checking your request..."
-
-> "Please wait while I verify..."
-
 ## Mission
-
-Your mission is to make every conversation feel real: fast responses, active listening, intelligent memory, smooth interruptions, and a warm human speaking style. The user should feel like they're talking to a genuine voice assistant rather than a chatbot.
+Your mission is to make every conversation feel real: fast responses, active listening, intelligent memory, smooth interruptions, and a warm human speaking style.
 
 SPOKEN VOICE DELIVERY RULES:
 1. Deliver your answer naturally in clear, flowing spoken English so it sounds warm and human when read aloud.
 2. Do not output markdown symbols (no asterisks, hash signs, bullet points) unless complete code is explicitly requested.`;
 
-  const baseIntelligence = "You are Gabby, a state-of-the-art AI assistant with top-tier intelligence, clarity, and depth—equivalent to ChatGPT Plus. You are extraordinarily knowledgeable, insightful, articulate, and thoughtful. You adapt seamlessly to any domain: deep coding, complex reasoning, creative writing, science, mathematics, analysis, and everyday chat. Be direct, thorough, and smart, avoiding unnecessary fluff while providing high-value, accurate insights.";
+  let baseIntelligence = "You are Gabby, an advanced AI assistant with DeepSeek/ChatGPT-level depth, reasoning, and precision. Provide insightful, thorough, and highly articulate answers. Structure complex responses with clear numbered headings ('1. ...', '2. ...'), concise paragraphs, round bullet points with bold lead-ins, clean code blocks, and markdown tables where data is presented. Avoid filler.";
 
-  const systemInstructionText = mode === 'voice' ? voiceSystemPrompt : baseIntelligence;
+  if (activeGem === 'code') {
+    baseIntelligence = "You are Code Expert, an elite senior software architect and programmer. Write modular, robust, clean code with detailed explanations, edge cases, and best practices.";
+  } else if (activeGem === 'writing') {
+    baseIntelligence = "You are Writing Assistant, a master editor and creative writer. Deliver compelling, polished, evocative prose, essays, articles, and communication.";
+  } else if (activeGem === 'math') {
+    baseIntelligence = "You are Math Tutor, a brilliant mathematician and educator. Solve complex mathematical problems step-by-step with proofs, intuition, and clear explanations.";
+  } else if (activeGem === 'brainstorm') {
+    baseIntelligence = "You are Creative Brainstormer, an imaginative strategist and innovator. Generate fresh, disruptive, multi-angle ideas and creative frameworks.";
+  } else if (activeGem === 'research') {
+    baseIntelligence = "You are Research Assistant, a rigorous researcher and analytical scientist. Deliver in-depth, fact-checked, structured analysis and synthesis.";
+  }
 
-  let selectedModel = 'gemini-3.6-flash';
-  let modelsToTry = [selectedModel, 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
+  const systemInstructionText = customSystemInstruction || (mode === 'voice' ? voiceSystemPrompt : baseIntelligence);
+
+  let primaryModel = 'gemini-2.5-flash';
+  let fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
   let generationConfig = undefined;
 
   if (mode === 'voice') {
-    selectedModel = 'gemini-3.6-flash';
-    modelsToTry = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
+    primaryModel = 'gemini-2.5-flash';
+    fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash'];
     generationConfig = {
       temperature: 0.5,
       topP: 0.9,
       maxOutputTokens: 200
     };
-  } else {
-    if (model === 'fast' || model === 'lite') {
-      selectedModel = 'gemini-3.5-flash-lite';
-    } else if (model === 'advanced') {
-      selectedModel = 'gemini-3.7-flash';
-    }
-    modelsToTry = [selectedModel, 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
+  } else if (model === 'advanced') {
+    primaryModel = 'gemini-2.5-pro';
+    fallbackModels = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-3.6-flash'];
+  } else if (model === 'fast' || model === 'lite') {
+    primaryModel = 'gemini-2.5-flash-lite';
+    fallbackModels = ['gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash'];
+  } else if (typeof model === 'string' && model.startsWith('gemini-')) {
+    primaryModel = model;
   }
+
+  const modelsToTry = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
 
   const contents = [];
   const recent = Array.isArray(conversationHistory) ? conversationHistory.slice(-10) : [];
   for (const m of recent) {
-    if (m.content && (m.role === 'user' || m.role === 'assistant')) {
+    if (m?.content && (m.role === 'user' || m.role === 'assistant')) {
       contents.push({
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: m.content }]
       });
     }
   }
+
+  // Multimodal Vision + Grounded Context
+  const userParts = [];
+  if (attachedImage?.base64 && attachedImage?.mimeType) {
+    userParts.push({
+      inlineData: {
+        mimeType: attachedImage.mimeType,
+        data: attachedImage.base64
+      }
+    });
+  }
+
+  let finalPrompt = userQuery || (attachedImage ? 'Please analyze this image.' : 'Hello');
+  if (locationContext) {
+    finalPrompt = `${locationContext}\n\n${finalPrompt}`;
+  }
+  if (searchContext) {
+    finalPrompt = `${searchContext}\n\n[USER QUERY]:\n${finalPrompt}`;
+  }
+  userParts.push({ text: finalPrompt });
+
   contents.push({
     role: 'user',
-    parts: [{ text: message }]
+    parts: userParts
   });
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -226,7 +176,7 @@ SPOKEN VOICE DELIVERY RULES:
 
   for (const m of modelsToTry) {
     try {
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${apiKey}`;
       const upstream = await fetch(geminiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -267,10 +217,10 @@ SPOKEN VOICE DELIVERY RULES:
       res.write('data: [DONE]\n\n');
       return res.end();
     } catch (err) {
-      console.warn(`Model ${m} failed:`, err);
+      console.warn(`Model ${m} stream attempt notice:`, err.message);
     }
   }
 
-  res.write(`data: ${JSON.stringify({ error: 'Service temporarily busy. Please try again.' })}\n\n`);
+  res.write(`data: ${JSON.stringify({ error: 'Service temporarily busy. Please try again shortly.' })}\n\n`);
   return res.end();
 }

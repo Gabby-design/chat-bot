@@ -30,6 +30,52 @@
   --gradient-mobile-bg: #131314;
 }
 
+:root {
+  --icon-lg: 24px;
+  --icon-md: 20px;
+  --icon-sm: 16px;
+  --tap-target: 44px;
+  --space-unit: 8px;
+  --text-body: 16px;
+  --text-sm: 14px;
+  --text-xs: 12px;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --icon-lg: 20px;
+    --icon-md: 18px;
+    --icon-sm: 14px;
+    --space-unit: 6px;
+    --text-sm: 13px;
+    --text-xs: 11px;
+  }
+}
+
+/* Centralized token helper classes */
+.icon-lg, svg.icon-lg {
+  width: var(--icon-lg) !important;
+  height: var(--icon-lg) !important;
+}
+
+.icon-md, svg.icon-md {
+  width: var(--icon-md) !important;
+  height: var(--icon-md) !important;
+}
+
+.icon-sm, svg.icon-sm {
+  width: var(--icon-sm) !important;
+  height: var(--icon-sm) !important;
+}
+
+.tap-target {
+  min-width: var(--tap-target) !important;
+  min-height: var(--tap-target) !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 body {
   margin: 0;
   padding: 0;

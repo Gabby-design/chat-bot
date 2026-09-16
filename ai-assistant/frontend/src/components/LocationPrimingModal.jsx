@@ -38,10 +38,10 @@ export default function LocationPrimingModal({
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+          className="absolute top-3 right-3 tap-target rounded-full text-gray-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer touch-manipulation"
           title="Close"
         >
-          <X size={18} />
+          <X className="icon-md" />
         </button>
 
         {/* Header with Icon */}

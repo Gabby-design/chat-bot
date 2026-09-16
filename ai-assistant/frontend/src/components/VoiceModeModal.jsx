@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, X, Square, Zap, ThumbsUp, ThumbsDown, Copy, Check, Plus, Volume2 } from 'lucide-react';
+import { Mic, MicOff, X, Square, Zap, ThumbsUp, ThumbsDown, Copy, Check, Plus, Volume2, Globe, Brain, ExternalLink } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { TableBlock, CodeBlock, GeminiSparkle } from './MarkdownBlocks.jsx';
 import toast from 'react-hot-toast';
 import { synthesizeGeminiVoice, stopGeminiVoice, GEMINI_VOICES, DEFAULT_GEMINI_VOICE } from '../utils/geminiVoice.js';
 
@@ -875,18 +878,18 @@ export default function VoiceModeModal({
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#0f1012] text-white select-none animate-fade-in overflow-hidden">
       {/* Top Header Bar */}
-      <div className="w-full flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-white/5 bg-[#131314]/80 backdrop-blur-md z-20">
+      <div className="w-full flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3.5 border-b border-white/5 bg-[#131314]/80 backdrop-blur-md z-20">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#4E80EE] via-[#9B72CF] to-[#E275AA] flex items-center justify-center shadow-md">
             <span className="text-xs font-bold text-white">G</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-sm sm:text-base font-medium tracking-tight text-gray-100">Gabby Voice</span>
-            <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 text-blue-300 font-semibold">3.6 Flash</span>
+            <span className="text-[var(--text-body)] sm:text-base font-medium tracking-tight text-gray-100">Gabby Voice</span>
+            <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 text-blue-300 font-semibold">2.5 Flash</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           {/* New Chat button */}
           {onNewChat && (
             <button
@@ -895,10 +898,10 @@ export default function VoiceModeModal({
                 onNewChat();
                 toast.success('Started fresh chat');
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-all text-xs font-medium border border-white/10 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 min-h-[var(--tap-target)] rounded-full bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-all text-[var(--text-xs)] font-medium border border-white/10 cursor-pointer touch-manipulation"
               title="Start New Conversation"
             >
-              <Plus size={14} />
+              <Plus className="icon-sm" />
               <span className="hidden sm:inline">New Chat</span>
             </button>
           )}
@@ -906,58 +909,170 @@ export default function VoiceModeModal({
           {/* Close button */}
           <button
             onClick={handleExitVoiceMode}
-            className="w-10 h-10 min-w-[40px] min-h-[40px] rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer flex items-center justify-center touch-manipulation"
+            className="tap-target rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer touch-manipulation"
             title="Exit Voice Mode"
           >
-            <X size={20} />
+            <X className="icon-md" />
           </button>
         </div>
       </div>
 
-      {/* Main Conversation Stream */}
-      <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-4 custom-scrollbar relative">
-        <div className="max-w-3xl mx-auto space-y-4 pb-48">
+      {/* Main Conversation Stream - Matches Text Mode Turn-by-Turn Bubble Layout */}
+      <div className="flex-1 overflow-y-auto px-3 sm:px-6 md:px-8 py-4 sm:py-6 space-y-4 custom-scrollbar relative">
+        <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6 pb-48">
           {messages.map((msg, idx) => (
-            <div key={idx} className="space-y-1.5">
+            <div key={idx} className="w-full mb-3 sm:mb-5 transition-all">
               {msg.role === 'user' ? (
-                /* User bubble */
+                /* User bubble (aligned right) */
                 <div className="flex justify-end">
-                  <div className="bg-[#282a2c] border border-white/5 text-gray-100 px-4 py-2 rounded-2xl max-w-lg text-xs sm:text-sm leading-relaxed shadow-sm">
-                    {msg.content}
+                  <div className="max-w-[88%] sm:max-w-[78%] flex flex-col items-end group/user">
+                    {msg.image && (
+                      <div className="mb-2 max-w-sm rounded-2xl overflow-hidden border border-white/10 shadow-lg bg-black/40">
+                        <img
+                          src={msg.image}
+                          alt="User attachment"
+                          className="max-h-64 w-auto object-contain rounded-2xl"
+                        />
+                      </div>
+                    )}
+                    <div className="inline-block text-[11px] sm:text-[13px] md:text-[14px] leading-snug sm:leading-relaxed bg-[#282a2c] text-[#e3e3e3] rounded-2xl rounded-tr-sm px-3.5 py-2 sm:px-4 sm:py-2.5 border border-white/5 shadow-sm text-left">
+                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                    </div>
+                    <div className="opacity-90 sm:opacity-0 sm:group-hover/user:opacity-100 transition-opacity mt-1 flex items-center gap-1">
+                      <button
+                        onClick={() => handleCopy(msg.content, idx)}
+                        className="tap-target p-1 text-[var(--text-xs)] text-[#8e918f] hover:text-white rounded-md hover:bg-white/5 transition-colors touch-manipulation cursor-pointer"
+                        title="Copy text"
+                      >
+                        {copiedIndex === idx ? <Check className="icon-sm text-emerald-400" /> : <Copy className="icon-sm" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
-                /* Assistant message */
-                <div className="flex flex-col items-start space-y-1 max-w-2xl">
-                  <div className="text-gray-200 text-xs sm:text-sm leading-relaxed pl-1 whitespace-pre-wrap">
-                    {msg.content}
+                /* Assistant Message - Full width, flush matching text mode */
+                <div className="w-full text-left space-y-1.5">
+                  <div className="flex items-center gap-1.5 mb-1 text-xs text-[#8a8a8e]">
+                    <GeminiSparkle
+                      className="icon-sm shrink-0"
+                      animated={!msg.content && idx === messages.length - 1}
+                    />
+                    <span className="text-[11px] sm:text-xs font-semibold text-[#c4c7c5]">Gabby</span>
                   </div>
-                  <div className="flex items-center gap-1 pl-1 pt-0.5 text-gray-500 text-xs">
-                    <button
-                      onClick={() => handleCopy(msg.content, idx)}
-                      className="min-h-[38px] min-w-[38px] p-2 hover:text-gray-300 transition-colors flex items-center justify-center touch-manipulation"
-                      title="Copy"
-                    >
-                      {copiedIndex === idx ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                    </button>
-                    <button className="min-h-[38px] min-w-[38px] p-2 hover:text-gray-300 transition-colors flex items-center justify-center touch-manipulation" title="Good response">
-                      <ThumbsUp size={14} />
-                    </button>
-                    <button className="min-h-[38px] min-w-[38px] p-2 hover:text-gray-300 transition-colors flex items-center justify-center touch-manipulation" title="Bad response">
-                      <ThumbsDown size={14} />
-                    </button>
+
+                  {/* Search Sources if available */}
+                  {msg.searchSources && msg.searchSources.length > 0 && (
+                    <div className="mb-2 space-y-1">
+                      <div className="flex items-center gap-1 text-[10px] sm:text-xs text-[#8a8a8e]">
+                        <Globe className="icon-sm text-[#70CFFF]" />
+                        <span className="font-medium">Sources ({msg.searchSources.length})</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {msg.searchSources.map((source, sIdx) => (
+                          <a
+                            key={sIdx}
+                            href={source.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/10 text-[9.5px] sm:text-xs text-[#8a8a8e] hover:text-white transition-colors max-w-xs truncate"
+                            title={source.snippet || source.title}
+                          >
+                            <span className="w-3.5 h-3.5 rounded-full bg-white/10 flex items-center justify-center text-[9px] font-mono shrink-0">
+                              {sIdx + 1}
+                            </span>
+                            <span className="truncate">{source.title || source.url}</span>
+                            <ExternalLink size={9} className="shrink-0 opacity-60" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Thinking block if any */}
+                  {msg.isThinking && (
+                    <div className="mb-2 rounded-xl bg-[#1c1c1e]/60 border border-white/10 p-2 sm:p-2.5 text-[10px] sm:text-xs">
+                      <div className="flex items-center gap-1.5 font-medium text-[#c4c7c5] mb-1 text-[10px] sm:text-xs">
+                        <Brain className="icon-sm text-[#9B72CF] animate-pulse" />
+                        <span>Thinking...</span>
+                      </div>
+                      {msg.reasoning && (
+                        <div className="border-l-2 border-white/20 pl-2.5 py-0.5 font-mono text-[10px] sm:text-[11.5px] leading-relaxed whitespace-pre-wrap text-[#8a8a8e]">
+                          {msg.reasoning}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Prose Content */}
+                  <div className="prose-chat text-[#e8e8e8] leading-relaxed w-full">
+                    {msg.content ? (
+                      <>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            table: ({ children }) => <TableBlock>{children}</TableBlock>,
+                            pre: ({ children }) => <>{children}</>,
+                            code({ node, inline, className, children, ...props }) {
+                              return !inline ? (
+                                <CodeBlock className={className} {...props}>
+                                  {children}
+                                </CodeBlock>
+                              ) : (
+                                <code className="bg-[#282a2c] px-1.5 py-0.5 rounded-md text-xs sm:text-sm font-mono text-[#70CFFF]" {...props}>
+                                  {children}
+                                </code>
+                              );
+                            }
+                          }}
+                        >
+                          {msg.content}
+                        </ReactMarkdown>
+                        {idx === messages.length - 1 && (voiceState === 'processing' || msg.isInProgress) && (
+                          <span className="streaming-cursor" title="Streaming..." />
+                        )}
+                      </>
+                    ) : (
+                      <div className="inline-flex items-center gap-2 text-xs text-[#8a8a8e] py-1">
+                        <span className="w-2 h-2 rounded-full bg-[#9B72CF] animate-pulse" />
+                        <span>Thinking...</span>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Actions */}
+                  {msg.content && (
+                    <div className="flex items-center gap-1 sm:gap-1.5 pt-1.5 sm:pt-2 opacity-95 transition-opacity">
+                      <button
+                        onClick={() => handleCopy(msg.content, idx)}
+                        className="tap-target p-2 hover:text-gray-300 transition-colors text-gray-500 hover:text-white cursor-pointer"
+                        title="Copy"
+                      >
+                        {copiedIndex === idx ? <Check className="icon-sm text-emerald-400" /> : <Copy className="icon-sm" />}
+                      </button>
+                      <button className="tap-target p-2 hover:text-gray-300 transition-colors text-gray-500 hover:text-white cursor-pointer" title="Good response">
+                        <ThumbsUp className="icon-sm" />
+                      </button>
+                      <button className="tap-target p-2 hover:text-gray-300 transition-colors text-gray-500 hover:text-white cursor-pointer" title="Bad response">
+                        <ThumbsDown className="icon-sm" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           ))}
 
-          {/* Live User Transcript Preview */}
+          {/* Live In-Progress User Speech Bubble */}
           {transcript && (
-            <div className="flex justify-end animate-fade-in">
-              <div className="bg-[#4E80EE]/20 border border-[#70CFFF]/40 text-[#70CFFF] px-3.5 py-2 rounded-2xl max-w-lg text-xs sm:text-sm leading-relaxed shadow-sm flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#70CFFF] animate-pulse" />
-                <span>{transcript}</span>
+            <div className="w-full mb-3 sm:mb-5 transition-all flex justify-end animate-fade-in">
+              <div className="max-w-[88%] sm:max-w-[78%] flex flex-col items-end">
+                <div className="inline-block text-[11px] sm:text-[13px] md:text-[14px] leading-snug sm:leading-relaxed bg-[#282a2c] text-[#70CFFF] rounded-2xl rounded-tr-sm px-3.5 py-2 sm:px-4 sm:py-2.5 border border-[#4E80EE]/40 shadow-sm text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#70CFFF] animate-pulse shrink-0" />
+                    <p className="whitespace-pre-wrap">{transcript}</p>
+                  </div>
+                </div>
+                <span className="text-[10px] text-[#70CFFF]/70 mt-1 mr-1">Listening...</span>
               </div>
             </div>
           )}
@@ -1008,45 +1123,45 @@ export default function VoiceModeModal({
         </div>
 
         {/* Bottom Control Bar */}
-        <div className="pointer-events-auto w-full max-w-md flex items-center justify-between px-4">
+        <div className="pointer-events-auto w-full max-w-md flex items-center justify-between px-3 sm:px-4">
           {/* Switch to text */}
           <button
             onClick={() => {
               handleExitVoiceMode();
               if (onType) onType();
             }}
-            className="min-h-[40px] px-4 py-2 rounded-full bg-white/10 hover:bg-white/15 text-gray-200 hover:text-white transition-all text-xs font-medium flex items-center gap-1.5 border border-white/10 cursor-pointer touch-manipulation"
+            className="tap-target px-4 py-2 rounded-full bg-white/10 hover:bg-white/15 text-gray-200 hover:text-white transition-all text-[var(--text-xs)] font-medium flex items-center gap-1.5 border border-white/10 cursor-pointer touch-manipulation"
             title="Switch to typing"
           >
-            <span>+</span>
+            <Plus className="icon-sm" />
             <span>Type</span>
           </button>
 
           {/* Action pill: Voice Name badge, Mute, and Close */}
-          <div className="flex items-center gap-1.5 bg-[#1e1f20]/90 backdrop-blur-lg border border-white/10 px-2 py-1 rounded-full">
+          <div className="flex items-center gap-1 sm:gap-1.5 bg-[#1e1f20]/90 backdrop-blur-lg border border-white/10 px-2 py-1 rounded-full">
             <div className="px-2.5 py-1 rounded-full text-xs font-medium text-[#70CFFF] flex items-center gap-1">
-              <Volume2 size={13} />
-              <span className="text-[11px]">Gemini 3.6 • {selectedVoice}</span>
+              <Volume2 className="icon-sm" />
+              <span className="text-[11px]">Gemini 2.5 • {selectedVoice}</span>
             </div>
 
             <button
               onClick={handleToggleMute}
-              className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-full transition-colors cursor-pointer flex items-center justify-center touch-manipulation ${
+              className={`tap-target rounded-full transition-colors cursor-pointer touch-manipulation ${
                 isMuted
                   ? 'bg-rose-500/20 text-rose-400 border border-rose-500/25'
                   : 'hover:bg-white/10 text-gray-300 hover:text-white'
               }`}
               title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
             >
-              {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+              {isMuted ? <MicOff className="icon-md" /> : <Mic className="icon-md" />}
             </button>
 
             <button
               onClick={handleExitVoiceMode}
-              className="w-10 h-10 min-w-[40px] min-h-[40px] rounded-full hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 transition-colors cursor-pointer flex items-center justify-center touch-manipulation"
+              className="tap-target rounded-full hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 transition-colors cursor-pointer touch-manipulation"
               title="Close Voice Mode"
             >
-              <X size={18} />
+              <X className="icon-md" />
             </button>
           </div>
         </div>

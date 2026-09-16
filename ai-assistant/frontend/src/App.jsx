@@ -8,6 +8,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react';
 import VoiceModeModal from './components/VoiceModeModal.jsx';
 import LocationPrimingModal from './components/LocationPrimingModal.jsx';
 import WeatherChip from './components/WeatherChip.jsx';
+import { TableBlock, CodeBlock, GeminiSparkle } from './components/MarkdownBlocks.jsx';
 import {
   getLocationPermissionStatus,
   requestBrowserLocation,
@@ -193,184 +194,6 @@ async function streamGeminiDirect({
   }
 
   return streamed;
-}
-
-function TableBlock({ children }) {
-  const [isCopied, setIsCopied] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const tableRef = useRef(null);
-
-  const extractTableCsv = () => {
-    if (!tableRef.current) return '';
-    const rows = Array.from(tableRef.current.querySelectorAll('tr'));
-    return rows
-      .map((r) => {
-        const cells = Array.from(r.querySelectorAll('th, td'));
-        return cells.map((c) => `"${c.innerText.replace(/"/g, '""').trim()}"`).join(',');
-      })
-      .join('\n');
-  };
-
-  const handleCopy = async () => {
-    try {
-      const csv = extractTableCsv();
-      await navigator.clipboard.writeText(csv);
-      setIsCopied(true);
-      toast.success('Table copied as CSV!');
-      setTimeout(() => setIsCopied(false), 2000);
-    } catch (e) {
-      toast.error('Failed to copy table');
-    }
-  };
-
-  const handleDownload = () => {
-    try {
-      const csv = extractTableCsv();
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `table-${Date.now()}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success('Table downloaded as CSV!');
-    } catch (e) {
-      toast.error('Failed to download table');
-    }
-  };
-
-  return (
-    <>
-      <div className="relative my-4 rounded-xl overflow-hidden bg-[#1c1c1e] border border-white/10 shadow-lg text-left">
-        {/* Table Card Header */}
-        <div className="flex items-center justify-between px-3.5 py-2 bg-[#131314]/80 border-b border-white/10">
-          <span className="text-xs font-mono font-medium text-[#8a8a8e] tracking-wider uppercase">
-            Table
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleCopy}
-              className="min-h-[38px] px-2.5 py-1.5 rounded-lg text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1.5 cursor-pointer touch-manipulation"
-              title="Copy table as CSV"
-            >
-              {isCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
-              <span className="text-[11px]">{isCopied ? 'Copied' : 'Copy'}</span>
-            </button>
-            <button
-              onClick={handleDownload}
-              className="min-h-[38px] px-2.5 py-1.5 rounded-lg text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1.5 cursor-pointer touch-manipulation"
-              title="Download CSV"
-            >
-              <Download size={13} />
-              <span className="text-[11px] hidden sm:inline">CSV</span>
-            </button>
-            <button
-              onClick={() => setIsExpanded(true)}
-              className="min-h-[38px] min-w-[38px] p-2 rounded-lg text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors cursor-pointer flex items-center justify-center touch-manipulation"
-              title="Expand table"
-            >
-              <Maximize2 size={14} />
-            </button>
-          </div>
-        </div>
-
-        {/* Scrollable Table Content */}
-        <div className="overflow-x-auto custom-scrollbar p-1" ref={tableRef}>
-          <table className="w-full border-collapse text-xs sm:text-sm text-[#e8e8e8]">
-            {children}
-          </table>
-        </div>
-      </div>
-
-      {/* Expanded Table Modal */}
-      {isExpanded && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md"
-          onClick={() => setIsExpanded(false)}
-        >
-          <div
-            className="w-full max-w-4xl max-h-[85vh] bg-[#1c1c1e] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-fade-in"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#131314]">
-              <span className="text-sm font-semibold text-white">Expanded Table View</span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleDownload}
-                  className="px-2.5 py-1 rounded-lg text-xs bg-white/10 hover:bg-white/15 text-white flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download size={13} />
-                  <span>Download CSV</span>
-                </button>
-                <button
-                  onClick={() => setIsExpanded(false)}
-                  className="p-1 hover:bg-white/10 rounded-lg text-[#8a8a8e] hover:text-white transition-colors cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-            <div className="overflow-auto p-4 flex-1 custom-scrollbar">
-              <table className="w-full border-collapse text-sm text-[#e8e8e8]">
-                {children}
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function CodeBlock({ className, children, ...props }) {
-  const [isCopied, setIsCopied] = useState(false);
-  const match = /language-(\w+)/.exec(className || '');
-  const codeText = String(children).replace(/\n$/, '');
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(codeText);
-      setIsCopied(true);
-      toast.success('Code copied!');
-      setTimeout(() => setIsCopied(false), 2000);
-    } catch (err) {
-      toast.error('Failed to copy code');
-    }
-  };
-
-  return (
-    <div className="relative my-4 rounded-xl overflow-hidden bg-[#1c1c1e] border border-white/10 group/code shadow-lg text-left">
-      <div className="flex items-center justify-between px-3.5 py-2 bg-[#131314]/80 border-b border-white/10">
-        <span className="text-xs font-mono text-[#8a8a8e] font-medium tracking-wide uppercase">
-          {match ? match[1] : 'code'}
-        </span>
-        <button
-          onClick={handleCopy}
-          className="min-h-[38px] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-[#8a8a8e] hover:text-white hover:bg-white/10 transition-colors cursor-pointer touch-manipulation"
-          title="Copy code"
-        >
-          {isCopied ? (
-            <>
-              <Check size={13} className="text-emerald-400" />
-              <span className="text-emerald-400 font-medium text-[11px]">Copied!</span>
-            </>
-          ) : (
-            <>
-              <Copy size={13} />
-              <span className="text-[11px]">Copy</span>
-            </>
-          )}
-        </button>
-      </div>
-      <pre className="p-3 sm:p-4 overflow-x-auto text-[13px] sm:text-sm leading-relaxed font-mono text-[#e8e8e8] custom-scrollbar whitespace-pre">
-        <code className={className} {...props}>
-          {children}
-        </code>
-      </pre>
-    </div>
-  );
 }
 
 function App() {
@@ -1533,12 +1356,21 @@ function App() {
   };
 
   const handleVoiceMessage = async (spokenText, onChunk, interruptedContext = null) => {
-    if (!spokenText.trim()) return '';
+    if (!spokenText || !spokenText.trim()) return '';
 
-    const userMsg = { role: 'user', content: spokenText };
-    setMessages((prev) => [...prev, userMsg]);
+    const userMsg = { role: 'user', content: spokenText.trim() };
+    const assistantMsg = { role: 'assistant', content: '', isInProgress: true };
 
     let activeChatId = currentChatId;
+    const isNew = !activeChatId;
+    if (!activeChatId) {
+      activeChatId = 'chat-' + Date.now();
+      setCurrentChatId(activeChatId);
+    }
+    const convTitle = generateConversationTitle(spokenText.trim());
+
+    // Append separate user and assistant bubbles immediately
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
     setIsLoading(true);
     setIsStreaming(true);
@@ -1569,11 +1401,11 @@ function App() {
           signal: controller.signal
         });
       } catch (err) {
-        console.warn('Voice stream fetch failed, falling back to direct Gemini:', err);
+        console.warn('Voice stream fetch failed, falling back to direct stream:', err);
       }
 
       if (!response || !response.ok) {
-        // Fallback to direct Gemini streaming
+        // Fallback to streamGeminiDirect
         await streamGeminiDirect({
           prompt: spokenText,
           conversationHistory: messages,
@@ -1600,8 +1432,15 @@ function App() {
         });
         if (onChunk) onChunk(null, streamed, true);
         setMessages((latest) => {
-          saveChatLocally(activeChatId || 'local-' + Date.now(), latest);
-          return latest;
+          const finalized = [...latest];
+          if (finalized.length > 0 && finalized[finalized.length - 1].role === 'assistant') {
+            finalized[finalized.length - 1] = {
+              ...finalized[finalized.length - 1],
+              isInProgress: false
+            };
+          }
+          saveChatLocally(activeChatId, finalized, isNew ? convTitle : null);
+          return finalized;
         });
         return streamed;
       }
@@ -1629,8 +1468,15 @@ function App() {
               if (onChunk) onChunk(null, streamed, true);
               fetchChats();
               setMessages((latest) => {
-                saveChatLocally(activeChatId || 'local-' + Date.now(), latest);
-                return latest;
+                const finalized = [...latest];
+                if (finalized.length > 0 && finalized[finalized.length - 1].role === 'assistant') {
+                  finalized[finalized.length - 1] = {
+                    ...finalized[finalized.length - 1],
+                    isInProgress: false
+                  };
+                }
+                saveChatLocally(activeChatId, finalized, isNew ? convTitle : null);
+                return finalized;
               });
               return streamed;
             }
@@ -1646,6 +1492,7 @@ function App() {
                   const updated = [...prev];
                   if (updated.length > 0) {
                     updated[updated.length - 1].content = parsed.error;
+                    updated[updated.length - 1].isInProgress = false;
                   }
                   return updated;
                 });
@@ -1662,7 +1509,7 @@ function App() {
                     const lastIdx = updated.length - 1;
                     updated[lastIdx] = {
                       ...updated[lastIdx],
-                      content: updated[lastIdx].content + newToken
+                      content: (updated[lastIdx].content || '') + newToken
                     };
                   }
                   return updated;
@@ -1674,8 +1521,15 @@ function App() {
       }
       if (onChunk) onChunk(null, streamed, true);
       setMessages((latest) => {
-        saveChatLocally(activeChatId || 'local-' + Date.now(), latest);
-        return latest;
+        const finalized = [...latest];
+        if (finalized.length > 0 && finalized[finalized.length - 1].role === 'assistant') {
+          finalized[finalized.length - 1] = {
+            ...finalized[finalized.length - 1],
+            isInProgress: false
+          };
+        }
+        saveChatLocally(activeChatId, finalized, isNew ? convTitle : null);
+        return finalized;
       });
       return streamed;
     } catch (err) {
@@ -1688,6 +1542,7 @@ function App() {
         const newMsgs = [...prev];
         if (newMsgs.length > 0) {
           newMsgs[newMsgs.length - 1].content = "Connection lost. Try speaking again.";
+          newMsgs[newMsgs.length - 1].isInProgress = false;
         }
         return newMsgs;
       });
@@ -1995,19 +1850,19 @@ function App() {
             <div className="flex items-center justify-between p-3 border-b border-white/5">
               <button
                 onClick={() => setIsSidebarOpen(false)}
-                className="p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors"
+                className="tap-target hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer touch-manipulation"
               >
-                <Menu size={20} />
+                <Menu className="icon-md" />
               </button>
               <button
                 onClick={() => {
                   setIsSearchOpen(true);
                   if (window.innerWidth < 1024) setIsSidebarOpen(false);
                 }}
-                className="p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer"
+                className="tap-target hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer touch-manipulation"
                 title="Search chats"
               >
-                <Search size={18} />
+                <Search className="icon-md" />
               </button>
             </div>
 
@@ -2015,9 +1870,9 @@ function App() {
             <div className="p-3">
               <button
                 onClick={createNewChat}
-                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-full bg-[#131314] hover:bg-[#282a2c] transition-all text-sm font-medium text-left text-[#e3e3e3] hover:text-white border border-white/10"
+                className="w-full flex items-center gap-3 px-4 min-h-[var(--tap-target)] rounded-full bg-[#131314] hover:bg-[#282a2c] transition-all text-sm font-medium text-left text-[#e3e3e3] hover:text-white border border-white/10 cursor-pointer touch-manipulation"
               >
-                <Plus size={18} className="text-[#4E80EE]" />
+                <Plus className="icon-md text-[#4E80EE]" />
                 <span>New chat</span>
               </button>
             </div>
@@ -2031,10 +1886,10 @@ function App() {
                     setIsMyStuffOpen(true);
                     if (window.innerWidth < 1024) setIsSidebarOpen(false);
                   }}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-[#c4c7c5] hover:text-white hover:bg-[#282a2c]/60 rounded-xl transition-colors cursor-pointer"
+                  className="w-full flex items-center justify-between px-3 min-h-[var(--tap-target)] text-sm text-[#c4c7c5] hover:text-white hover:bg-[#282a2c]/60 rounded-xl transition-colors cursor-pointer touch-manipulation"
                 >
-                  <span className="font-medium text-xs">My Stuff</span>
-                  <ChevronRight size={15} />
+                  <span className="font-medium text-[var(--text-xs)]">My Stuff</span>
+                  <ChevronRight className="icon-sm" />
                 </button>
               </div>
 
@@ -2045,10 +1900,10 @@ function App() {
                     setIsGemsOpen(true);
                     if (window.innerWidth < 1024) setIsSidebarOpen(false);
                   }}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-[#c4c7c5] hover:text-white hover:bg-[#282a2c]/60 rounded-xl transition-colors cursor-pointer"
+                  className="w-full flex items-center justify-between px-3 min-h-[var(--tap-target)] text-sm text-[#c4c7c5] hover:text-white hover:bg-[#282a2c]/60 rounded-xl transition-colors cursor-pointer touch-manipulation"
                 >
-                  <span className="font-medium text-xs">Gems</span>
-                  <ChevronRight size={15} />
+                  <span className="font-medium text-[var(--text-xs)]">Gems</span>
+                  <ChevronRight className="icon-sm" />
                 </button>
               </div>
 
@@ -2191,10 +2046,10 @@ function App() {
             <button
               type="button"
               onClick={() => setIsSidebarOpen(true)}
-              className="w-10 h-10 min-w-[40px] min-h-[40px] hover:bg-[#1e1f20] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer flex items-center justify-center touch-manipulation"
+              className="tap-target hover:bg-[#1e1f20] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer touch-manipulation"
               title="Chat history"
             >
-              <Menu size={19} />
+              <Menu className="icon-md" />
             </button>
           </div>
 
@@ -2239,7 +2094,7 @@ function App() {
             <button
               type="button"
               onClick={toggleLandscapeMode}
-              className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-full border transition-colors flex items-center justify-center cursor-pointer touch-manipulation ${
+              className={`tap-target rounded-full border transition-colors flex items-center justify-center cursor-pointer touch-manipulation ${
                 isLandscapeMode
                   ? 'bg-[#4E80EE]/15 border-[#4E80EE]/30 text-[#70CFFF]'
                   : 'border-white/10 hover:border-white/20 text-[#8a8a8e] hover:text-white bg-transparent'
@@ -2247,28 +2102,28 @@ function App() {
               title={isLandscapeMode ? 'Switch to portrait layout' : 'Switch to landscape layout'}
               aria-label={isLandscapeMode ? 'Switch to portrait layout' : 'Switch to landscape layout'}
             >
-              <RotateCw size={18} className={`transition-transform duration-300 ${isLandscapeMode ? 'rotate-90 text-[#70CFFF]' : ''}`} />
+              <RotateCw className={`icon-md transition-transform duration-300 ${isLandscapeMode ? 'rotate-90 text-[#70CFFF]' : ''}`} />
             </button>
 
             {/* Live Voice Mode Button */}
             <button
               type="button"
               onClick={openVoiceMode}
-              className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-auto sm:px-3 sm:py-1.5 rounded-full text-[#c4c7c5] hover:text-white hover:bg-white/5 border border-white/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation"
+              className="tap-target sm:w-auto sm:px-3 sm:py-1.5 rounded-full text-[#c4c7c5] hover:text-white hover:bg-white/5 border border-white/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation"
               title="Start Live Voice Conversation"
             >
-              <Mic size={18} className="text-[#70CFFF]" />
-              <span className="text-xs font-medium hidden sm:inline">Voice</span>
+              <Mic className="icon-md text-[#70CFFF]" />
+              <span className="text-[var(--text-xs)] font-medium hidden sm:inline">Voice</span>
             </button>
 
             {/* Circular outlined "+" button for new chat */}
             <button
               type="button"
               onClick={createNewChat}
-              className="w-10 h-10 min-w-[40px] min-h-[40px] rounded-full border border-white/10 hover:border-white/20 text-[#e8e8e8] hover:text-white hover:bg-white/5 flex items-center justify-center transition-all cursor-pointer touch-manipulation"
+              className="tap-target rounded-full border border-white/10 hover:border-white/20 text-[#e8e8e8] hover:text-white hover:bg-white/5 flex items-center justify-center transition-all cursor-pointer touch-manipulation"
               title="Start new chat"
             >
-              <Plus size={19} />
+              <Plus className="icon-md" />
             </button>
           </div>
         </header>
@@ -2543,10 +2398,10 @@ function App() {
               <button
                 type="button"
                 onClick={scrollToBottom}
-                className="absolute -top-14 right-2 sm:right-4 w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/10 text-[#e8e8e8] hover:text-white flex items-center justify-center transition-all animate-bounce cursor-pointer z-20 touch-manipulation"
+                className="absolute -top-14 right-2 sm:right-4 tap-target rounded-full bg-[#1c1c1e] hover:bg-[#282a2c] border border-white/10 text-[#e8e8e8] hover:text-white flex items-center justify-center transition-all animate-bounce cursor-pointer z-20 touch-manipulation"
                 title="Jump to bottom"
               >
-                <ChevronDown size={20} />
+                <ChevronDown className="icon-md" />
               </button>
             )}
 
@@ -2578,11 +2433,11 @@ function App() {
                     <button
                       type="button"
                       onClick={() => setAttachedImage(null)}
-                      className="cancel-btn touch-manipulation"
+                      className="cancel-btn tap-target touch-manipulation"
                       title="Remove image"
                       aria-label="Remove image attachment"
                     >
-                      <X size={13} className="text-white stroke-[2.5]" />
+                      <X className="icon-sm text-white stroke-[2.5]" />
                     </button>
                   </div>
                   <div className="text-[10px] sm:text-xs min-w-0 flex-1">
@@ -2623,14 +2478,14 @@ function App() {
                   <button
                     type="button"
                     onClick={toggleThink}
-                    className={`inline-flex items-center gap-1.5 min-h-[38px] px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium transition-all shrink-0 cursor-pointer border touch-manipulation ${
+                    className={`inline-flex items-center gap-1.5 min-h-[var(--tap-target)] px-3 py-1.5 rounded-full text-[var(--text-xs)] font-medium transition-all shrink-0 cursor-pointer border touch-manipulation ${
                       isThinkEnabled
                         ? 'bg-[#9B72CF]/15 text-[#D8B4FE] border-[#9B72CF]/30'
                         : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
                     }`}
                     title="Toggle Reasoning Pass (Think)"
                   >
-                    <Brain size={14} className={isThinkEnabled ? 'text-[#D8B4FE]' : 'text-[#8a8a8e]'} />
+                    <Brain className={`icon-sm ${isThinkEnabled ? 'text-[#D8B4FE]' : 'text-[#8a8a8e]'}`} />
                     <span>Think</span>
                     {isThinkEnabled && <span className="w-1.5 h-1.5 rounded-full bg-[#D8B4FE] animate-pulse" />}
                   </button>
@@ -2639,14 +2494,14 @@ function App() {
                   <button
                     type="button"
                     onClick={toggleSearch}
-                    className={`inline-flex items-center gap-1.5 min-h-[38px] px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium transition-all shrink-0 cursor-pointer border touch-manipulation ${
+                    className={`inline-flex items-center gap-1.5 min-h-[var(--tap-target)] px-3 py-1.5 rounded-full text-[var(--text-xs)] font-medium transition-all shrink-0 cursor-pointer border touch-manipulation ${
                       isSearchEnabled
                         ? 'bg-[#4E80EE]/15 text-[#70CFFF] border-[#4E80EE]/30'
                         : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
                     }`}
                     title="Toggle Web Search Grounding"
                   >
-                    <Globe size={14} className={isSearchEnabled ? 'text-[#70CFFF]' : 'text-[#8a8a8e]'} />
+                    <Globe className={`icon-sm ${isSearchEnabled ? 'text-[#70CFFF]' : 'text-[#8a8a8e]'}`} />
                     <span>Search</span>
                     {isSearchEnabled && <span className="w-1.5 h-1.5 rounded-full bg-[#70CFFF] animate-pulse" />}
                   </button>
@@ -2658,11 +2513,11 @@ function App() {
                   <button
                     type="button"
                     onClick={() => setIsAttachmentOpen(!isAttachmentOpen)}
-                    className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full border border-white/10 hover:border-white/20 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer touch-manipulation"
+                    className="tap-target rounded-full border border-white/10 hover:border-white/20 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer touch-manipulation"
                     title="Add attachment"
                     aria-label="Add attachment"
                   >
-                    <Plus size={18} />
+                    <Plus className="icon-md" />
                   </button>
 
                   {/* Circular Send or Mic or Stop */}
@@ -2670,28 +2525,28 @@ function App() {
                     <button
                       type="button"
                       onClick={stopGeneration}
-                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all flex items-center justify-center cursor-pointer touch-manipulation"
+                      className="tap-target bg-white text-[#131314] hover:bg-gray-200 rounded-full transition-all flex items-center justify-center cursor-pointer touch-manipulation"
                       title="Stop generation"
                     >
-                      <Square size={13} className="fill-current" />
+                      <Square className="icon-sm fill-current" />
                     </button>
                   ) : (input.trim() || attachedImage) ? (
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full bg-white text-[#131314] hover:bg-gray-200 flex items-center justify-center cursor-pointer transition-all scale-100 hover:scale-105 active:scale-95 touch-manipulation"
+                      className="tap-target rounded-full bg-white text-[#131314] hover:bg-gray-200 flex items-center justify-center cursor-pointer transition-all scale-100 hover:scale-105 active:scale-95 touch-manipulation"
                       title="Send message"
                     >
-                      <Send size={16} className="ml-0.5 text-[#131314]" />
+                      <Send className="icon-md ml-0.5 text-[#131314]" />
                     </button>
                   ) : (
                     <button
                       type="button"
                       onClick={openVoiceMode}
-                      className="w-10 h-10 min-w-[40px] min-h-[40px] sm:w-9 sm:h-9 sm:min-w-[36px] sm:min-h-[36px] rounded-full border border-white/10 hover:border-white/20 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer touch-manipulation"
+                      className="tap-target rounded-full border border-white/10 hover:border-white/20 text-[#8a8a8e] hover:text-white bg-transparent flex items-center justify-center transition-colors cursor-pointer touch-manipulation"
                       title="Start Live Voice Conversation"
                     >
-                      <Mic size={18} />
+                      <Mic className="icon-md" />
                     </button>
                   )}
                 </div>
@@ -3093,9 +2948,9 @@ function App() {
               </div>
               <button
                 onClick={() => setIsSettingsOpen(false)}
-                className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"
+                className="tap-target hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors cursor-pointer touch-manipulation"
               >
-                <X size={20} />
+                <X className="icon-md" />
               </button>
             </div>
 
@@ -3383,8 +3238,8 @@ function App() {
           <div className="bg-[#1E1E1E] rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden shadow-2xl">
             <div className="flex items-center justify-between p-6 border-b border-white/10">
               <h2 className="text-xl font-semibold text-white">Report an Issue</h2>
-              <button onClick={() => setShowFeedback(false)} className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors">
-                <X size={20} />
+              <button onClick={() => setShowFeedback(false)} className="tap-target hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors cursor-pointer touch-manipulation">
+                <X className="icon-md" />
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)] custom-scrollbar">
@@ -3439,9 +3294,9 @@ function App() {
               </div>
               <button
                 onClick={() => setIsSearchOpen(false)}
-                className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"
+                className="tap-target hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors cursor-pointer touch-manipulation"
               >
-                <X size={20} />
+                <X className="icon-md" />
               </button>
             </div>
 

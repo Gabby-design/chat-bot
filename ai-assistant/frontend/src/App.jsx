@@ -962,7 +962,7 @@ function App() {
   const createNewChat = () => {
     try {
       if (!currentChatId && messages.length === 0) {
-        if (window.innerWidth < 768) setIsSidebarOpen(false);
+        if (window.innerWidth < 1024) setIsSidebarOpen(false);
         return;
       }
       setCurrentChatId(null);
@@ -970,7 +970,7 @@ function App() {
       setAttachedImage(null);
       setInput('');
       isAutoScrollEnabledRef.current = true;
-      if (window.innerWidth < 768) setIsSidebarOpen(false);
+      if (window.innerWidth < 1024) setIsSidebarOpen(false);
     } catch (error) {
       console.error('Failed to create new chat:', error);
     }
@@ -1017,7 +1017,7 @@ function App() {
       setMessages(loadedMessages || []);
       setCurrentChatId(chatId);
       isAutoScrollEnabledRef.current = true;
-      if (window.innerWidth < 768) setIsSidebarOpen(false);
+      if (window.innerWidth < 1024) setIsSidebarOpen(false);
     } catch (error) {
       console.error('Failed to load chat:', error);
       toast.error('Failed to load conversation');
@@ -2066,8 +2066,11 @@ function App() {
                 <Menu size={20} />
               </button>
               <button
-                onClick={() => setIsSearchOpen(true)}
-                className="p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors"
+                onClick={() => {
+                  setIsSearchOpen(true);
+                  if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                }}
+                className="p-2 hover:bg-[#282a2c] rounded-full text-[#c4c7c5] hover:text-white transition-colors cursor-pointer"
                 title="Search chats"
               >
                 <Search size={18} />
@@ -2090,8 +2093,11 @@ function App() {
               {/* My Stuff Section */}
               <div>
                 <button
-                  onClick={() => setIsMyStuffOpen(true)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-[#c4c7c5] hover:text-white hover:bg-[#282a2c]/60 rounded-xl transition-colors"
+                  onClick={() => {
+                    setIsMyStuffOpen(true);
+                    if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-[#c4c7c5] hover:text-white hover:bg-[#282a2c]/60 rounded-xl transition-colors cursor-pointer"
                 >
                   <span className="font-medium text-xs">My Stuff</span>
                   <ChevronRight size={15} />
@@ -2101,8 +2107,11 @@ function App() {
               {/* Gems Section */}
               <div>
                 <button
-                  onClick={() => setIsGemsOpen(true)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-[#c4c7c5] hover:text-white hover:bg-[#282a2c]/60 rounded-xl transition-colors"
+                  onClick={() => {
+                    setIsGemsOpen(true);
+                    if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-[#c4c7c5] hover:text-white hover:bg-[#282a2c]/60 rounded-xl transition-colors cursor-pointer"
                 >
                   <span className="font-medium text-xs">Gems</span>
                   <ChevronRight size={15} />
@@ -2185,7 +2194,10 @@ function App() {
                 </button>
               )}
               <button
-                onClick={() => setIsSettingsOpen(true)}
+                onClick={() => {
+                  setIsSettingsOpen(true);
+                  if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                }}
                 className="w-full flex items-center gap-3 px-3 py-2 rounded-full hover:bg-[#282a2c] transition-colors text-sm text-left text-[#c4c7c5] hover:text-white cursor-pointer"
               >
                 <Settings size={18} />
@@ -2240,8 +2252,8 @@ function App() {
       <main className="flex-1 flex flex-col h-full relative min-w-0 bg-[#131314]">
         {/* Header */}
         <header className="h-12 sm:h-14 flex items-center px-2.5 sm:px-4 justify-between bg-[#131314] border-b border-white/[0.08] z-10 shrink-0">
-          {/* Left: hamburger icon -> opens slide-out panel with chat history */}
-          <div className="flex items-center gap-1 sm:gap-2">
+          {/* Left: hamburger icon on mobile/tablet -> opens slide-out panel with chat history */}
+          <div className="flex items-center gap-1 sm:gap-2 lg:hidden">
             <button
               type="button"
               onClick={() => setIsSidebarOpen(true)}
@@ -2854,7 +2866,7 @@ function App() {
         <div className="fixed inset-0 z-50 flex justify-end">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/60 backdrop-blur-md"
             onClick={() => setIsMyStuffOpen(false)}
           />
 
@@ -2946,7 +2958,7 @@ function App() {
         <div className="fixed inset-0 z-50 flex justify-end">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/60 backdrop-blur-md"
             onClick={() => setIsGemsOpen(false)}
           />
 

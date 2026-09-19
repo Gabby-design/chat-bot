@@ -85,6 +85,7 @@ export default function VoiceModeModal({
   const lastSubmittedUserSpeechRef = useRef('');
   const lastSubmittedTimeRef = useRef(0);
   const resumeListeningTimerRef = useRef(null);
+  const assistantSpeechStartTimeRef = useRef(0);
 
   // Fresh props and callbacks refs to eliminate stale closure traps across turns
   const onSendMessageRef = useRef(onSendMessage);
@@ -125,43 +126,26 @@ export default function VoiceModeModal({
     try {
       initAudioContext();
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.resume();
         const silent = new SpeechSynthesisUtterance('');
         silent.volume = 0;
         window.speechSynthesis.speak(silent);
       }
       if (!ttsAudioRef.current) {
         const audio = new Audio();
-        audio.crossOrigin = 'anonymous';
         ttsAudioRef.current = audio;
       }
+      // Play 1-sample silent wave to truly unlock HTMLMediaElement autoplay on user click
+      const silentAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+      silentAudio.volume = 0.01;
+      silentAudio.play().then(() => silentAudio.pause()).catch(() => {});
     } catch (e) {}
   };
 
   const setupTtsAudio = () => {
     if (!ttsAudioRef.current) {
       const audio = new Audio();
-      audio.crossOrigin = 'anonymous';
       ttsAudioRef.current = audio;
-    }
-
-    // On mobile devices, avoid Web Audio createMediaElementSource routing because
-    // iOS Safari mutes or blocks MediaElementSource nodes attached to dynamic audio blobs.
-    if (isMobile) return;
-
-    initAudioContext();
-    if (audioContextRef.current && ttsAudioRef.current && !ttsSourceRef.current) {
-      try {
-        const source = audioContextRef.current.createMediaElementSource(ttsAudioRef.current);
-        const analyser = audioContextRef.current.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.5;
-        source.connect(analyser);
-        analyser.connect(audioContextRef.current.destination);
-        ttsSourceRef.current = source;
-        ttsAnalyserRef.current = analyser;
-      } catch (e) {
-        console.warn('[Voice Mode] createMediaElementSource for TTS failed:', e);
-      }
     }
   };
 
@@ -218,30 +202,8 @@ export default function VoiceModeModal({
       const state = voiceStateRef.current;
 
       if (state === 'speaking') {
-        if (ttsAnalyserRef.current) {
-          const buffer = new Uint8Array(ttsAnalyserRef.current.frequencyBinCount);
-          ttsAnalyserRef.current.getByteFrequencyData(buffer);
-          let sum = 0;
-          for (let i = 0; i < buffer.length; i++) sum += buffer[i];
-          const avg = sum / buffer.length;
-          target = Math.min(1, Math.max(0, (avg - 10) / 55));
-        } else {
-          // Mobile natural speech pulse animation
-          target = 0.45 + 0.35 * Math.sin(timestamp * 0.007) * Math.cos(timestamp * 0.003);
-        }
-
-        // Desktop barge-in: If user talks into mic while assistant speaks
-        if (!isMobile && micAnalyserRef.current && !isMutedRef.current && !isShuttingDownRef.current) {
-          const micBuffer = new Uint8Array(micAnalyserRef.current.frequencyBinCount);
-          micAnalyserRef.current.getByteFrequencyData(micBuffer);
-          let micSum = 0;
-          for (let i = 0; i < micBuffer.length; i++) micSum += micBuffer[i];
-          const micAvg = micSum / micBuffer.length;
-          if (micAvg > 28) {
-            handleInterrupt();
-            return;
-          }
-        }
+        // Natural fluid speech pulse animation for the central orb
+        target = 0.45 + 0.35 * Math.sin(timestamp * 0.007) * Math.cos(timestamp * 0.003);
       } else if ((state === 'listening' || state === 'processing') && !isMutedRef.current) {
         if (micAnalyserRef.current) {
           const buffer = new Uint8Array(micAnalyserRef.current.frequencyBinCount);
@@ -386,6 +348,7 @@ export default function VoiceModeModal({
       clearTimeout(resumeListeningTimerRef.current);
       resumeListeningTimerRef.current = null;
     }
+    assistantSpeechStartTimeRef.current = 0;
     isAssistantSpeakingRef.current = false;
 
     // Explicitly pause and flush client-side audio player so no buffered words play
@@ -448,9 +411,11 @@ export default function VoiceModeModal({
 
       try {
         window.speechSynthesis.cancel();
+        window.speechSynthesis.resume();
         const utterance = new SpeechSynthesisUtterance(cleanText);
         utterance.rate = 1.0;
         utterance.pitch = 1.0;
+        utterance.volume = 1.0;
         utterance.lang = 'en-US';
 
         const voices = window.speechSynthesis.getVoices?.() || [];
@@ -555,6 +520,10 @@ export default function VoiceModeModal({
         // Barge-in (Interruption): If assistant is speaking or processing, immediately halt generation,
         // flush the client-side audio player, and switch to listening!
         if (voiceStateRef.current === 'speaking' || isAssistantSpeakingRef.current || voiceStateRef.current === 'processing') {
+          // Grace period: do not allow barge-in during the first 1.5 seconds of assistant speech to prevent audio echo cutoff
+          if (isAssistantSpeakingRef.current && Date.now() - assistantSpeechStartTimeRef.current < 1500) {
+            return;
+          }
           console.log('[Voice Mode] Speech detected during assistant turn, interrupting.');
           handleInterrupt();
         }
@@ -746,6 +715,7 @@ export default function VoiceModeModal({
 
     stopListening();
     isAssistantSpeakingRef.current = true;
+    assistantSpeechStartTimeRef.current = Date.now();
     updateVoiceState('speaking');
 
     let playedViaGemini = false;
@@ -765,11 +735,21 @@ export default function VoiceModeModal({
       const audio = ttsAudioRef.current || new Audio();
       activeAudioRef.current = audio;
       audio.src = blobUrl;
+      audio.volume = 1.0;
 
       await new Promise((resolve, reject) => {
+        let startedAt = 0;
+        audio.onplay = () => {
+          startedAt = Date.now();
+        };
         audio.onended = () => {
           activeAudioRef.current = null;
-          resolve();
+          // If ended suspiciously fast (<150ms), treat as failure to trigger device fallback
+          if (startedAt && Date.now() - startedAt < 150) {
+            reject(new Error('Audio ended prematurely'));
+          } else {
+            resolve();
+          }
         };
         audio.onerror = (e) => {
           activeAudioRef.current = null;
@@ -783,17 +763,15 @@ export default function VoiceModeModal({
 
       playedViaGemini = true;
     } catch (geminiErr) {
-      console.warn('[Voice Mode] Gemini Neural TTS unavailable or blocked on mobile, falling back to device speech synthesis:', geminiErr);
+      console.warn('[Voice Mode] Gemini Neural TTS unavailable or blocked, falling back to device speech synthesis:', geminiErr);
     }
 
-    // Fallback: If Gemini Neural Voice failed (quota limit, network error) or mobile autoplay blocked it,
-    // and the user has NOT interrupted, speak seamlessly using device native speech synthesis!
+    // Fallback: If Gemini Neural Voice failed or audio was blocked, speak seamlessly using device native speech synthesis!
     if (
       !playedViaGemini &&
       isMountedRef.current &&
       !isShuttingDownRef.current &&
-      voiceStateRef.current === 'speaking' &&
-      isAssistantSpeakingRef.current
+      voiceStateRef.current === 'speaking'
     ) {
       try {
         await speakWithDeviceSynthesis(text);
@@ -810,13 +788,13 @@ export default function VoiceModeModal({
       if (resumeListeningTimerRef.current) {
         clearTimeout(resumeListeningTimerRef.current);
       }
-      // Reopening mic acoustic buffer
+      // Reopening mic acoustic buffer after speaker reverb decays
       resumeListeningTimerRef.current = setTimeout(() => {
         if (isMountedRef.current && !isShuttingDownRef.current && !isMutedRef.current) {
           updateVoiceState('listening');
           startListening();
         }
-      }, 350);
+      }, 700);
     }
   };
 

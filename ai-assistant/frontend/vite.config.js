@@ -8,6 +8,12 @@ export default defineConfig({
   server: {
     port: 3000,
     strictPort: false, // If port 3000 is occupied, automatically increment to 3001, 3002, etc.
-    host: true
+    host: true,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      }
+    }
   }
 })

@@ -80,7 +80,7 @@ export function pcmToWavBlob(base64Pcm, sampleRate = 24000, numChannels = 1) {
   return new Blob([wavBytes], { type: 'audio/wav' });
 }
 
-// Synthesize speech using Google Gemini Neural Voice (Serverless /api/tts endpoint)
+// Synthesize speech using Neural Voice (Serverless /api/tts endpoint)
 export async function synthesizeGeminiVoice(rawText, { voice = DEFAULT_GEMINI_VOICE } = {}) {
   const cleanText = cleanTextForSpeech(rawText);
   if (!cleanText) {
@@ -94,7 +94,7 @@ export async function synthesizeGeminiVoice(rawText, { voice = DEFAULT_GEMINI_VO
 
   const voiceName = GEMINI_VOICES.some((v) => v.id === voice) ? voice : DEFAULT_GEMINI_VOICE;
 
-  // Serverless backend /api/tts endpoint (accesses process.env.GEMINI_API_KEY securely on the server)
+  // 1. Try POST /api/tts (returns base64 audio payload)
   try {
     const res = await fetch('/api/tts', {
       method: 'POST',
@@ -105,23 +105,32 @@ export async function synthesizeGeminiVoice(rawText, { voice = DEFAULT_GEMINI_VO
     if (res.ok) {
       const data = await res.json();
       if (data.audio) {
-        // audio is base64 WAV
-        const binaryWav = window.atob(data.audio.replace(/[\s\r\n]+/g, ''));
-        const bytes = new Uint8Array(binaryWav.length);
-        for (let i = 0; i < binaryWav.length; i++) {
-          bytes[i] = binaryWav.charCodeAt(i);
+        const mimeType = data.mimeType || 'audio/mpeg';
+        const cleanBase64 = data.audio.replace(/[\s\r\n]+/g, '');
+        const binaryString = window.atob(cleanBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
         }
-        const blob = new Blob([bytes], { type: 'audio/wav' });
+        const blob = new Blob([bytes], { type: mimeType });
         const blobUrl = URL.createObjectURL(blob);
         speechAudioCache.set(cacheKey, blobUrl);
         return blobUrl;
       }
     }
   } catch (err) {
-    console.warn('[Gemini Voice] /api/tts serverless notice:', err.message);
+    console.warn('[Gemini Voice] POST /api/tts notice:', err.message);
   }
 
-  throw new Error('Could not synthesize Gemini voice audio via server.');
+  // 2. Direct streaming GET /api/tts as fallback URL
+  try {
+    const streamUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&voice=${encodeURIComponent(voiceName)}`;
+    return streamUrl;
+  } catch (err) {
+    console.warn('[Gemini Voice] Fallback URL generation error:', err);
+  }
+
+  throw new Error('Could not synthesize voice audio via server.');
 }
 
 // Stops and flushes any currently playing audio immediately
@@ -139,9 +148,12 @@ export function stopGeminiVoice() {
     } catch (e) {}
     currentAudio = null;
   }
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
 }
 
-// Plays Gemini Voice audio with full state lifecycle callbacks
+// Plays voice audio with multi-tier fallback lifecycle
 export async function playGeminiVoice(rawText, {
   voice = DEFAULT_GEMINI_VOICE,
   onLoading = () => {},
@@ -152,13 +164,19 @@ export async function playGeminiVoice(rawText, {
   // Stop existing playback
   stopGeminiVoice();
 
+  const clean = cleanTextForSpeech(rawText);
+  if (!clean) {
+    onError(new Error('No text to speak'));
+    return;
+  }
+
   const abortController = new AbortController();
   currentAbortController = abortController;
 
   try {
     onLoading(true);
 
-    const blobUrl = await synthesizeGeminiVoice(rawText, { voice });
+    const audioUrl = await synthesizeGeminiVoice(rawText, { voice });
 
     if (abortController.signal.aborted) {
       onLoading(false);
@@ -167,7 +185,7 @@ export async function playGeminiVoice(rawText, {
 
     onLoading(false);
 
-    const audio = new Audio(blobUrl);
+    const audio = new Audio(audioUrl);
     currentAudio = audio;
 
     audio.onplay = () => {
@@ -181,16 +199,60 @@ export async function playGeminiVoice(rawText, {
       onEnd();
     };
 
-    audio.onerror = (e) => {
+    audio.onerror = async () => {
       if (currentAudio === audio) {
         currentAudio = null;
       }
+      // Tier 2 Fallback: Browser Web Speech API
+      console.warn('[Voice Engine] Audio element playback failed, falling back to Web Speech API');
+      speakWithWebSpeechFallback(clean, onStart, onEnd, onError);
+    };
+
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      await playPromise;
+    }
+  } catch (err) {
+    onLoading(false);
+    console.warn('[Voice Engine] Server synthesis error, falling back to Web Speech API:', err.message);
+    speakWithWebSpeechFallback(clean, onStart, onEnd, onError);
+  }
+}
+
+function speakWithWebSpeechFallback(text, onStart, onEnd, onError) {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    onError(new Error('Speech synthesis not supported on this device'));
+    return;
+  }
+
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    const voices = window.speechSynthesis.getVoices?.() || [];
+    const preferred = voices.find(
+      (v) =>
+        v.lang.startsWith('en') &&
+        (v.name.includes('Natural') ||
+          v.name.includes('Google') ||
+          v.name.includes('Samantha') ||
+          v.name.includes('Aria'))
+    ) || voices.find((v) => v.lang.startsWith('en'));
+
+    if (preferred) utterance.voice = preferred;
+
+    utterance.onstart = () => onStart();
+    utterance.onend = () => onEnd();
+    utterance.onerror = (e) => {
+      onEnd();
       onError(e);
     };
 
-    await audio.play();
-  } catch (err) {
-    onLoading(false);
-    onError(err);
+    window.speechSynthesis.speak(utterance);
+  } catch (e) {
+    onError(e);
   }
 }

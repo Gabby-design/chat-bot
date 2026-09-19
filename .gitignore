@@ -15,6 +15,9 @@ venv/
 venv-*/
 ENV/
 *.db
+*.db-*
+*.db-shm
+*.db-wal
 *.sqlite3
 
 # Node / Frontend

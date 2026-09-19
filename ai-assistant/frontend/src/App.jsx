@@ -25,6 +25,7 @@ import {
   DEFAULT_GEMINI_VOICE
 } from './utils/geminiVoice.js';
 import { performWebSearch } from './utils/webSearch.js';
+import { TypewriterStreamer } from './utils/typewriter.js';
 
 // Dynamic API_BASE_URL:
 // - If custom VITE_API_BASE_URL is provided, use it.
@@ -117,6 +118,7 @@ const getChatPreview = (msgs) => {
 
 async function streamGeminiDirect({
   prompt,
+  chatId = null,
   conversationHistory = [],
   modelSelection = 'standard',
   mode = 'chat',
@@ -126,7 +128,9 @@ async function streamGeminiDirect({
   searchContext = null,
   locationContext = null,
   signal,
-  onToken
+  onToken,
+  onChatId,
+  onResetBuffer
 }) {
   const res = await fetch(`${API_BASE_URL}/api/chat/stream`, {
     method: 'POST',
@@ -134,6 +138,7 @@ async function streamGeminiDirect({
     body: JSON.stringify({
       message: prompt,
       prompt,
+      chat_id: chatId,
       conversationHistory,
       model: modelSelection,
       mode,
@@ -150,7 +155,8 @@ async function streamGeminiDirect({
     let errMsg = `Server returned status ${res.status}`;
     try {
       const errData = await res.json();
-      if (errData.error) errMsg = errData.error;
+      if (errData.detail) errMsg = typeof errData.detail === 'string' ? errData.detail : JSON.stringify(errData.detail);
+      else if (errData.error) errMsg = errData.error;
     } catch (e) {}
     throw new Error(errMsg);
   }
@@ -183,6 +189,20 @@ async function streamGeminiDirect({
 
       if (parsed?.error) {
         throw new Error(parsed.error);
+      }
+
+      if (parsed?.type === 'chat_id' || parsed?.chat_id) {
+        const receivedId = parsed.chat_id || parsed.id;
+        if (receivedId && onChatId) {
+          onChatId(receivedId);
+        }
+      }
+
+      if (parsed?.type === 'reset_buffer') {
+        streamed = '';
+        if (onResetBuffer) {
+          onResetBuffer();
+        }
       }
 
       const textPart = parsed?.text || parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -312,6 +332,7 @@ function App() {
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const chatContainerRef = useRef(null);
   const textareaRef = useRef(null);
+  const activeTypewriterRef = useRef(null);
 
   // Manual-only Landscape Mode State (never auto-toggled by physical rotation)
   const [isLandscapeMode, setIsLandscapeMode] = useState(() => {
@@ -1174,97 +1195,65 @@ function App() {
         ? `[INTERNAL REASONING CHAIN]:\n${accumulatedReasoning}\n\n[USER QUERY]:\n${message}\n\n[TASK]:\nProvide the comprehensive, structured, and polished final answer to the user.`
         : message;
 
-      let streamSucceeded = false;
-      try {
-        await streamGeminiDirect({
-          prompt: answerPrompt,
-          conversationHistory: historyForModel,
-          modelSelection: selectedModel,
-          mode: 'chat',
-          activeGem,
-          attachedImage: currentImg,
-          searchContext: searchContextStr,
-          locationContext: locationContextStr,
-          signal: controller.signal,
-          onToken: (token) => {
-            finalStreamed += token;
-            setMessages((prev) => {
-              const updated = [...prev];
-              if (updated.length > 0) {
-                const lastIdx = updated.length - 1;
-                updated[lastIdx] = {
-                  ...updated[lastIdx],
-                  content: (updated[lastIdx].content || '') + token
-                };
-              }
-              return updated;
-            });
-          }
-        });
-        streamSucceeded = true;
-      } catch (directErr) {
-        if (directErr.name === 'AbortError') throw directErr;
-        console.warn('Direct stream notice, attempting backend fallback:', directErr);
-      }
+      let currentActiveChatId = chatIdToUse;
 
-      // Fallback to backend /api/chat/stream if direct stream failed and nothing streamed
-      if (!streamSucceeded && !finalStreamed) {
-        const backendRes = await fetch(`${API_BASE_URL}/api/chat/stream`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: answerPrompt,
-            model: selectedModel,
-            mode: 'chat',
-            conversationHistory: historyForModel,
-            locationContext: locationContextStr
-          }),
-          signal: controller.signal
-        });
-
-        if (backendRes.ok && backendRes.body) {
-          const reader = backendRes.body.getReader();
-          const decoder = new TextDecoder();
-          let sseBuf = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            sseBuf += decoder.decode(value, { stream: true });
-            const lines = sseBuf.split('\n');
-            sseBuf = lines.pop() || '';
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (trimmed.startsWith('data: ')) {
-                const payload = trimmed.slice(6).trim();
-                if (payload === '[DONE]') break;
-                try {
-                  const parsed = JSON.parse(payload);
-                  if (parsed.text) {
-                    finalStreamed += parsed.text;
-                    setMessages((prev) => {
-                      const updated = [...prev];
-                      if (updated.length > 0) {
-                        const lastIdx = updated.length - 1;
-                        updated[lastIdx] = {
-                          ...updated[lastIdx],
-                          content: (updated[lastIdx].content || '') + parsed.text
-                        };
-                      }
-                      return updated;
-                    });
-                  }
-                } catch (e) {}
-              }
+      const typewriter = new TypewriterStreamer({
+        onUpdate: (typed) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            if (updated.length > 0) {
+              const lastIdx = updated.length - 1;
+              updated[lastIdx] = {
+                ...updated[lastIdx],
+                content: typed
+              };
             }
-          }
+            return updated;
+          });
         }
-      }
+      });
+      activeTypewriterRef.current = typewriter;
+
+      await streamGeminiDirect({
+        prompt: answerPrompt,
+        chatId: currentActiveChatId,
+        conversationHistory: historyForModel,
+        modelSelection: selectedModel,
+        mode: 'chat',
+        activeGem,
+        attachedImage: currentImg,
+        searchContext: searchContextStr,
+        locationContext: locationContextStr,
+        signal: controller.signal,
+        onChatId: (serverChatId) => {
+          if (serverChatId) {
+            currentActiveChatId = serverChatId;
+            currentChatIdRef.current = serverChatId;
+            setCurrentChatId(serverChatId);
+          }
+        },
+        onResetBuffer: () => {
+          finalStreamed = '';
+          typewriter.reset();
+        },
+        onToken: (token) => {
+          finalStreamed += token;
+          typewriter.append(token);
+        }
+      });
+
+      // Smoothly finish typing out any remaining characters before finalizing
+      await new Promise((resolve) => {
+        typewriter.onComplete = (full) => resolve(full);
+        typewriter.finish();
+      });
 
       setMessages((latest) => {
-        saveChatLocally(chatIdToUse, latest);
+        saveChatLocally(currentActiveChatId, latest);
         return latest;
       });
+      // Synchronize sidebar conversation list so title and time update immediately
+      fetchChats();
     } catch (err) {
       if (err.name === 'AbortError') {
         console.log('Stream aborted by user');
@@ -1423,6 +1412,25 @@ function App() {
         console.warn('Voice stream fetch failed, falling back to direct stream:', err);
       }
 
+      const typewriter = new TypewriterStreamer({
+        onUpdate: (typed) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            if (updated.length > 0) {
+              const lastIdx = updated.length - 1;
+              updated[lastIdx] = {
+                ...updated[lastIdx],
+                content: typed
+              };
+            }
+            messagesRef.current = updated;
+            return updated;
+          });
+          if (onChunk) onChunk(null, typed, false);
+        }
+      });
+      activeTypewriterRef.current = typewriter;
+
       if (!response || !response.ok) {
         // Fallback to streamGeminiDirect
         await streamGeminiDirect({
@@ -1433,21 +1441,18 @@ function App() {
           activeGem,
           locationContext: locSummary,
           signal: controller.signal,
+          onResetBuffer: () => {
+            streamed = '';
+            typewriter.reset();
+          },
           onToken: (token) => {
             streamed += token;
-            setMessages((prev) => {
-              const updated = [...prev];
-              if (updated.length > 0) {
-                const lastIdx = updated.length - 1;
-                updated[lastIdx] = {
-                  ...updated[lastIdx],
-                  content: (updated[lastIdx].content || '') + token
-                };
-              }
-              return updated;
-            });
-            if (onChunk) onChunk(token, streamed, false);
+            typewriter.append(token);
           }
+        });
+        await new Promise((resolve) => {
+          typewriter.onComplete = (full) => resolve(full);
+          typewriter.finish();
         });
         if (onChunk) onChunk(null, streamed, true);
         setMessages((latest) => {
@@ -1484,6 +1489,10 @@ function App() {
               setIsStreaming(false);
               setIsLoading(false);
               abortControllerRef.current = null;
+              await new Promise((resolve) => {
+                typewriter.onComplete = (full) => resolve(full);
+                typewriter.finish();
+              });
               if (onChunk) onChunk(null, streamed, true);
               fetchChats();
               setMessages((latest) => {
@@ -1503,13 +1512,22 @@ function App() {
             }
             try {
               const parsed = JSON.parse(data);
-              if (parsed.chat_id && !currentChatIdRef.current) {
-                currentChatIdRef.current = parsed.chat_id;
-                setCurrentChatId(parsed.chat_id);
+              if (parsed.type === 'chat_id' || parsed.chat_id) {
+                const newId = parsed.chat_id || parsed.id;
+                if (newId) {
+                  activeChatId = newId;
+                  currentChatIdRef.current = newId;
+                  setCurrentChatId(newId);
+                }
+              }
+              if (parsed.type === 'reset_buffer') {
+                streamed = '';
+                typewriter.reset();
               }
               if (parsed.error) {
                 console.error('Server error received in voice stream:', parsed.error);
                 streamed = parsed.error;
+                typewriter.flush();
                 setMessages((prev) => {
                   const updated = [...prev];
                   if (updated.length > 0) {
@@ -1524,19 +1542,7 @@ function App() {
               if (parsed.text) {
                 const newToken = parsed.text;
                 streamed += newToken;
-                if (onChunk) onChunk(newToken, streamed, false);
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  if (updated.length > 0) {
-                    const lastIdx = updated.length - 1;
-                    updated[lastIdx] = {
-                      ...updated[lastIdx],
-                      content: (updated[lastIdx].content || '') + newToken
-                    };
-                  }
-                  messagesRef.current = updated;
-                  return updated;
-                });
+                typewriter.append(newToken);
               }
             } catch (e) {}
           }
@@ -1580,6 +1586,10 @@ function App() {
   };
 
   const handleAbortStream = () => {
+    if (activeTypewriterRef.current) {
+      activeTypewriterRef.current.flush();
+      activeTypewriterRef.current = null;
+    }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;

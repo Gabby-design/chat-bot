@@ -110,13 +110,13 @@ SPOKEN VOICE DELIVERY RULES:
 
   const systemInstructionText = customSystemInstruction || (mode === 'voice' ? voiceSystemPrompt : baseIntelligence);
 
-  let primaryModel = 'gemini-2.5-flash';
-  let fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
+  let primaryModel = 'gemini-3.6-flash';
+  let fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'];
   let generationConfig = undefined;
 
   if (mode === 'voice') {
-    primaryModel = 'gemini-2.5-flash';
-    fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash'];
+    primaryModel = 'gemini-3.6-flash';
+    fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-2.5-flash'];
     generationConfig = {
       temperature: 0.5,
       topP: 0.9,
@@ -124,10 +124,10 @@ SPOKEN VOICE DELIVERY RULES:
     };
   } else if (model === 'advanced') {
     primaryModel = 'gemini-2.5-pro';
-    fallbackModels = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-3.6-flash'];
+    fallbackModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
   } else if (model === 'fast' || model === 'lite') {
-    primaryModel = 'gemini-2.5-flash-lite';
-    fallbackModels = ['gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash'];
+    primaryModel = 'gemini-3.5-flash-lite';
+    fallbackModels = ['gemini-3.6-flash', 'gemini-2.5-flash-lite'];
   } else if (typeof model === 'string' && model.startsWith('gemini-')) {
     primaryModel = model;
   }
@@ -211,6 +211,7 @@ SPOKEN VOICE DELIVERY RULES:
   res.setHeader('Connection', 'keep-alive');
 
   for (const m of modelsToTry) {
+    let tokensEmitted = false;
     try {
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${apiKey}`;
       const upstream = await fetch(geminiUrl, {
@@ -243,6 +244,7 @@ SPOKEN VOICE DELIVERY RULES:
               const data = JSON.parse(jsonStr);
               const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
               if (text) {
+                tokensEmitted = true;
                 res.write(`data: ${JSON.stringify({ text })}\n\n`);
               }
             } catch (e) {}
@@ -254,6 +256,10 @@ SPOKEN VOICE DELIVERY RULES:
       return res.end();
     } catch (err) {
       console.warn(`Model ${m} stream attempt notice:`, err.message);
+      if (tokensEmitted) {
+        res.write(`data: ${JSON.stringify({ type: 'reset_buffer' })}\n\n`);
+        tokensEmitted = false;
+      }
     }
   }
 

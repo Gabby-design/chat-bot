@@ -110,42 +110,72 @@ SPOKEN VOICE DELIVERY RULES:
 
   const systemInstructionText = customSystemInstruction || (mode === 'voice' ? voiceSystemPrompt : baseIntelligence);
 
-  let primaryModel = 'gemini-2.5-flash';
-  let fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite'];
+  let primaryModel = 'gemini-3.6-flash';
+  let fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'];
   let generationConfig = undefined;
 
   if (mode === 'voice') {
-    primaryModel = 'gemini-2.5-flash';
-    fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash'];
+    primaryModel = 'gemini-3.6-flash';
+    fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-2.5-flash'];
     generationConfig = {
       temperature: 0.5,
       topP: 0.9,
-      maxOutputTokens: 200
+      maxOutputTokens: 2048
     };
   } else if (model === 'advanced') {
     primaryModel = 'gemini-2.5-pro';
-    fallbackModels = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-3.6-flash'];
+    fallbackModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
   } else if (model === 'fast' || model === 'lite') {
-    primaryModel = 'gemini-2.5-flash-lite';
-    fallbackModels = ['gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash'];
+    primaryModel = 'gemini-3.5-flash-lite';
+    fallbackModels = ['gemini-3.6-flash', 'gemini-2.5-flash-lite'];
   } else if (typeof model === 'string' && model.startsWith('gemini-')) {
     primaryModel = model;
   }
 
   const modelsToTry = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
 
+  // 1. Sanitize conversation history into clean alternating user / model turns
+  const cleanHistory = [];
+  const rawHistory = Array.isArray(conversationHistory) ? conversationHistory : [];
+  for (const m of rawHistory) {
+    if (!m || !m.content || typeof m.content !== 'string' || !m.content.trim()) continue;
+    if (m.isInProgress) continue;
+    const role = (m.role === 'assistant' || m.role === 'model') ? 'model' : 'user';
+    cleanHistory.push({ role, text: m.content.trim() });
+  }
+
+  // If the last turn in cleanHistory already matches the current user query, pop it
+  // to avoid duplicating the user query and violating Gemini's alternating turn constraint
+  if (cleanHistory.length > 0 && cleanHistory[cleanHistory.length - 1].role === 'user') {
+    const lastUserText = cleanHistory[cleanHistory.length - 1].text.toLowerCase().trim();
+    const currentQueryText = (userQuery || '').toLowerCase().trim();
+    if (lastUserText === currentQueryText || (currentQueryText && lastUserText.includes(currentQueryText))) {
+      cleanHistory.pop();
+    }
+  }
+
+  // Retain up to 24 recent messages for rich conversational context
+  const recent = cleanHistory.slice(-24);
+
   const contents = [];
-  const recent = Array.isArray(conversationHistory) ? conversationHistory.slice(-10) : [];
-  for (const m of recent) {
-    if (m?.content && (m.role === 'user' || m.role === 'assistant')) {
+  for (const item of recent) {
+    if (contents.length > 0 && contents[contents.length - 1].role === item.role) {
+      // Merge consecutive identical roles to adhere to Gemini's strict alternation
+      contents[contents.length - 1].parts[0].text += `\n\n${item.text}`;
+    } else {
       contents.push({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
+        role: item.role,
+        parts: [{ text: item.text }]
       });
     }
   }
 
-  // Multimodal Vision + Grounded Context
+  // Gemini requires multi-turn contents to start with 'user'
+  while (contents.length > 0 && contents[0].role !== 'user') {
+    contents.shift();
+  }
+
+  // Multimodal Vision + Grounded Context for the new turn
   const userParts = [];
   if (attachedImage?.base64 && attachedImage?.mimeType) {
     userParts.push({
@@ -165,16 +195,23 @@ SPOKEN VOICE DELIVERY RULES:
   }
   userParts.push({ text: finalPrompt });
 
-  contents.push({
-    role: 'user',
-    parts: userParts
-  });
+  // If contents currently ends with 'user', merge with it rather than pushing another 'user'
+  if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
+    const prevText = contents[contents.length - 1].parts[0]?.text || '';
+    contents[contents.length - 1].parts[0].text = `${prevText}\n\n${finalPrompt}`;
+  } else {
+    contents.push({
+      role: 'user',
+      parts: userParts
+    });
+  }
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
   for (const m of modelsToTry) {
+    let tokensEmitted = false;
     try {
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${apiKey}`;
       const upstream = await fetch(geminiUrl, {
@@ -207,6 +244,7 @@ SPOKEN VOICE DELIVERY RULES:
               const data = JSON.parse(jsonStr);
               const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
               if (text) {
+                tokensEmitted = true;
                 res.write(`data: ${JSON.stringify({ text })}\n\n`);
               }
             } catch (e) {}
@@ -218,6 +256,10 @@ SPOKEN VOICE DELIVERY RULES:
       return res.end();
     } catch (err) {
       console.warn(`Model ${m} stream attempt notice:`, err.message);
+      if (tokensEmitted) {
+        res.write(`data: ${JSON.stringify({ type: 'reset_buffer' })}\n\n`);
+        tokensEmitted = false;
+      }
     }
   }
 

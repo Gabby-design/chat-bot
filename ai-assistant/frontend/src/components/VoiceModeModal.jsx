@@ -5,6 +5,10 @@ import remarkGfm from 'remark-gfm';
 import { TableBlock, CodeBlock, GeminiSparkle } from './MarkdownBlocks.jsx';
 import toast from 'react-hot-toast';
 import { synthesizeGeminiVoice, stopGeminiVoice, GEMINI_VOICES, DEFAULT_GEMINI_VOICE } from '../utils/geminiVoice.js';
+import { createSpeechTimeline, getSpeechSyncProgress } from '../utils/speechSync.js';
+
+// Urgent Interruption Keywords (instant barge-in triggers even on interim speech)
+const INTERRUPT_KEYWORDS_REGEX = /\b(wait|stop|hold\s*on|pause|hang\s*on|one\s*sec|one\s*second|excuse\s*me|listen|quiet|shh|hold\s*up|wait\s*wait|hold\s*it|okay|ok|right|alright|got\s*it)\b/i;
 
 // Anti-Self-Echo & Duplicate Filter: Prevents assistant from transcribing or replying to its own speaker output
 function isSelfEchoOrDuplicate(text, recentAssistantSpeeches = [], lastUserText = '', isSpeaking = false) {
@@ -57,7 +61,10 @@ export default function VoiceModeModal({
   onNewChat,
   messages = [],
   onType,
-  selectedVoice = DEFAULT_GEMINI_VOICE
+  selectedVoice = DEFAULT_GEMINI_VOICE,
+  onVoiceChange,
+  activeGem,
+  onUpdateAssistantMessage
 }) {
   const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
@@ -86,6 +93,18 @@ export default function VoiceModeModal({
   const lastSubmittedTimeRef = useRef(0);
   const resumeListeningTimerRef = useRef(null);
   const assistantSpeechStartTimeRef = useRef(0);
+  const currentAssistantSpeechRef = useRef('');
+  const interruptedContextRef = useRef(null);
+  const wasInterruptedRef = useRef(false);
+
+  // Speech-to-Text sync & interruption tracking refs
+  const onUpdateAssistantMessageRef = useRef(onUpdateAssistantMessage);
+  onUpdateAssistantMessageRef.current = onUpdateAssistantMessage;
+  const currentSpokenTextRef = useRef('');
+  const unspokenRemainingTextRef = useRef('');
+  const fullAssistantTextRef = useRef('');
+  const currentTimelineRef = useRef(null);
+  const syncAnimFrameRef = useRef(null);
 
   // Fresh props and callbacks refs to eliminate stale closure traps across turns
   const onSendMessageRef = useRef(onSendMessage);
@@ -327,6 +346,10 @@ export default function VoiceModeModal({
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
     }
+    if (syncAnimFrameRef.current) {
+      cancelAnimationFrame(syncAnimFrameRef.current);
+      syncAnimFrameRef.current = null;
+    }
     if (audioContextRef.current) {
       try {
         if (audioContextRef.current.state !== 'closed') {
@@ -343,10 +366,14 @@ export default function VoiceModeModal({
   };
 
   // Instant interruption (barge-in): halts generation, flushes client audio player buffers, and resumes listening
-  const handleInterrupt = () => {
+  const handleInterrupt = (userInterruptText = '') => {
     if (resumeListeningTimerRef.current) {
       clearTimeout(resumeListeningTimerRef.current);
       resumeListeningTimerRef.current = null;
+    }
+    if (syncAnimFrameRef.current) {
+      cancelAnimationFrame(syncAnimFrameRef.current);
+      syncAnimFrameRef.current = null;
     }
     assistantSpeechStartTimeRef.current = 0;
     isAssistantSpeakingRef.current = false;
@@ -377,9 +404,52 @@ export default function VoiceModeModal({
 
     if (onAbort) onAbort();
 
-    setTranscript('');
-    setCurrentAssistantSpeech('');
+    // Freeze the assistant's message at the exact words spoken up to the moment of interruption!
+    const frozenSpoken = currentSpokenTextRef.current || '';
+    const fullText = fullAssistantTextRef.current || currentAssistantSpeechRef.current || '';
+    let remaining = unspokenRemainingTextRef.current || '';
+    if (!remaining && fullText && frozenSpoken) {
+      remaining = fullText.slice(frozenSpoken.length).trim();
+    }
+
+    if (frozenSpoken && onUpdateAssistantMessageRef.current) {
+      onUpdateAssistantMessageRef.current(frozenSpoken, false);
+    }
+
+    // Preserve the assistant's speech so far as interrupted context
+    if (frozenSpoken || remaining) {
+      interruptedContextRef.current = {
+        spokenText: frozenSpoken,
+        remainingText: remaining,
+        assistantText: remaining, // backwards compatibility
+        timestamp: Date.now()
+      };
+      wasInterruptedRef.current = true;
+    }
+
     updateVoiceState('listening');
+
+    if (userInterruptText) {
+      setTranscript(userInterruptText);
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+      }
+      // Give the user time to continue their thought if they just said "wait", or submit
+      const words = userInterruptText.trim().split(/\s+/);
+      const waitTime = words.length <= 2 ? 1400 : 950;
+      silenceTimeoutRef.current = setTimeout(() => {
+        if (voiceStateRef.current === 'listening' && !isShuttingDownRef.current && !isAssistantSpeakingRef.current) {
+          silenceTimeoutRef.current = null;
+          if (handleUserSubmitRef.current) {
+            handleUserSubmitRef.current(userInterruptText);
+          } else {
+            handleUserSubmit(userInterruptText);
+          }
+        }
+      }, waitTime);
+    } else {
+      setTranscript('');
+    }
 
     if (!isMutedRef.current && !isShuttingDownRef.current) {
       startListening();
@@ -436,8 +506,26 @@ export default function VoiceModeModal({
           updateVoiceState('speaking');
         };
 
+        utterance.onboundary = (event) => {
+          if (typeof event.charIndex === 'number') {
+            const charIdx = event.charIndex + (event.charLength || 0);
+            const revealed = cleanText.slice(0, Math.max(charIdx, 1));
+            const remaining = cleanText.slice(revealed.length);
+            currentSpokenTextRef.current = revealed;
+            unspokenRemainingTextRef.current = remaining;
+            if (onUpdateAssistantMessageRef.current) {
+              onUpdateAssistantMessageRef.current(revealed, true);
+            }
+          }
+        };
+
         utterance.onend = () => {
           isAssistantSpeakingRef.current = false;
+          currentSpokenTextRef.current = cleanText;
+          unspokenRemainingTextRef.current = '';
+          if (onUpdateAssistantMessageRef.current) {
+            onUpdateAssistantMessageRef.current(cleanText, false);
+          }
           resolve(true);
         };
 
@@ -457,8 +545,7 @@ export default function VoiceModeModal({
 
   // SpeechRecognition Starter with mobile compatibility (iOS Safari & Android Chrome)
   const startListening = () => {
-    if (isShuttingDownRef.current || isMutedRef.current) return;
-    if (isAssistantSpeakingRef.current || voiceStateRef.current === 'speaking') return;
+    if (isShuttingDownRef.current || isMutedRef.current || isListeningRef.current) return;
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -512,20 +599,37 @@ export default function VoiceModeModal({
         const currentText = (finalTranscript + interimTranscript).trim();
         if (!currentText) return;
 
+        const isCurrentlySpeaking = isAssistantSpeakingRef.current || voiceStateRef.current === 'speaking' || voiceStateRef.current === 'processing';
+        const isInterruptKeyword = INTERRUPT_KEYWORDS_REGEX.test(currentText);
+
         // Anti-Self-Echo & Duplicate Transcription Filter
-        if (isSelfEchoOrDuplicate(currentText, recentAssistantTextsRef.current, lastSubmittedUserSpeechRef.current, isAssistantSpeakingRef.current || voiceStateRef.current === 'speaking')) {
-          return;
-        }
+        const isEcho = isSelfEchoOrDuplicate(
+          currentText,
+          [currentAssistantSpeechRef.current, ...recentAssistantTextsRef.current],
+          lastSubmittedUserSpeechRef.current,
+          isCurrentlySpeaking
+        );
 
         // Barge-in (Interruption): If assistant is speaking or processing, immediately halt generation,
         // flush the client-side audio player, and switch to listening!
-        if (voiceStateRef.current === 'speaking' || isAssistantSpeakingRef.current || voiceStateRef.current === 'processing') {
-          // Grace period: do not allow barge-in during the first 1.5 seconds of assistant speech to prevent audio echo cutoff
-          if (isAssistantSpeakingRef.current && Date.now() - assistantSpeechStartTimeRef.current < 1500) {
+        if (isCurrentlySpeaking) {
+          // If the speech is detected as self-echo from the speakers and is not an explicit interrupt keyword, ignore it
+          if (isEcho && !isInterruptKeyword) {
             return;
           }
-          console.log('[Voice Mode] Speech detected during assistant turn, interrupting.');
-          handleInterrupt();
+
+          // Avoid microphonic transition click within first 150ms unless it's an explicit keyword
+          if (!isInterruptKeyword && Date.now() - assistantSpeechStartTimeRef.current < 150) {
+            return;
+          }
+
+          console.log('[Voice Mode] User barge-in speech detected:', currentText);
+          handleInterrupt(currentText);
+          return;
+        }
+
+        if (isEcho) {
+          return;
         }
 
         setTranscript(currentText);
@@ -590,22 +694,21 @@ export default function VoiceModeModal({
         isListeningRef.current = false;
         setIsMicActive(false);
 
-        // Auto-restart if we should still be listening
+        // Auto-restart recognition so it stays active during both listening AND speaking
         if (
           isMountedRef.current &&
           !isShuttingDownRef.current &&
           !isMutedRef.current &&
-          !isAssistantSpeakingRef.current &&
-          voiceStateRef.current === 'listening'
+          (voiceStateRef.current === 'listening' || voiceStateRef.current === 'speaking')
         ) {
-          const restartDelay = isMobile ? 250 : 150;
+          const restartDelay = isMobile ? 200 : 100;
           setTimeout(() => {
             if (
               isMountedRef.current &&
               !isShuttingDownRef.current &&
               !isMutedRef.current &&
-              !isAssistantSpeakingRef.current &&
-              voiceStateRef.current === 'listening'
+              (voiceStateRef.current === 'listening' || voiceStateRef.current === 'speaking') &&
+              !isListeningRef.current
             ) {
               startListening();
             }
@@ -657,6 +760,11 @@ export default function VoiceModeModal({
       return;
     }
 
+    // Capture and reset interrupted context for this turn
+    const activeInterruptedContext = interruptedContextRef.current;
+    interruptedContextRef.current = null;
+    wasInterruptedRef.current = false;
+
     lastSubmittedUserSpeechRef.current = spokenText;
     lastSubmittedTimeRef.current = Date.now();
 
@@ -681,6 +789,7 @@ export default function VoiceModeModal({
 
         if (fullText) {
           accumulatedResponse = fullText;
+          currentAssistantSpeechRef.current = fullText;
           setCurrentAssistantSpeech(fullText);
         }
 
@@ -694,7 +803,7 @@ export default function VoiceModeModal({
             playGeminiResponse(accumulatedResponse);
           }
         }
-      });
+      }, activeInterruptedContext);
     } catch (err) {
       console.error('Error submitting voice message:', err);
       isAssistantSpeakingRef.current = false;
@@ -708,15 +817,31 @@ export default function VoiceModeModal({
   const playGeminiResponse = async (text) => {
     if (isShuttingDownRef.current || !text) {
       isAssistantSpeakingRef.current = false;
+      currentAssistantSpeechRef.current = '';
+      currentSpokenTextRef.current = '';
+      unspokenRemainingTextRef.current = '';
+      fullAssistantTextRef.current = '';
       updateVoiceState('listening');
       startListening();
       return;
     }
 
-    stopListening();
+    // Keep recognition active to allow user barge-in!
     isAssistantSpeakingRef.current = true;
+    currentAssistantSpeechRef.current = text;
+    fullAssistantTextRef.current = text;
+    currentSpokenTextRef.current = '';
+    unspokenRemainingTextRef.current = text;
     assistantSpeechStartTimeRef.current = Date.now();
     updateVoiceState('speaking');
+
+    // Create speech timeline for speech-to-text synchronization
+    const timeline = createSpeechTimeline(text);
+    currentTimelineRef.current = timeline;
+
+    if (!isListeningRef.current) {
+      startListening();
+    }
 
     let playedViaGemini = false;
 
@@ -739,10 +864,55 @@ export default function VoiceModeModal({
 
       await new Promise((resolve, reject) => {
         let startedAt = 0;
+
+        const updateSync = () => {
+          if (!audio || audio.paused || audio.ended || isShuttingDownRef.current || !isAssistantSpeakingRef.current) {
+            return;
+          }
+          const duration = audio.duration;
+          const currentTime = audio.currentTime;
+          if (duration && duration > 0) {
+            const progress = Math.min(1.0, Math.max(0, currentTime / duration));
+            const { revealed, remaining } = getSpeechSyncProgress(timeline, progress);
+            currentSpokenTextRef.current = revealed;
+            unspokenRemainingTextRef.current = remaining;
+            if (onUpdateAssistantMessageRef.current) {
+              onUpdateAssistantMessageRef.current(revealed, true);
+            }
+          }
+          syncAnimFrameRef.current = requestAnimationFrame(updateSync);
+        };
+
         audio.onplay = () => {
           startedAt = Date.now();
+          if (syncAnimFrameRef.current) {
+            cancelAnimationFrame(syncAnimFrameRef.current);
+          }
+          syncAnimFrameRef.current = requestAnimationFrame(updateSync);
         };
+
+        audio.ontimeupdate = () => {
+          if (audio && audio.duration) {
+            const progress = Math.min(1.0, Math.max(0, audio.currentTime / audio.duration));
+            const { revealed, remaining } = getSpeechSyncProgress(timeline, progress);
+            currentSpokenTextRef.current = revealed;
+            unspokenRemainingTextRef.current = remaining;
+            if (onUpdateAssistantMessageRef.current) {
+              onUpdateAssistantMessageRef.current(revealed, true);
+            }
+          }
+        };
+
         audio.onended = () => {
+          if (syncAnimFrameRef.current) {
+            cancelAnimationFrame(syncAnimFrameRef.current);
+            syncAnimFrameRef.current = null;
+          }
+          currentSpokenTextRef.current = text;
+          unspokenRemainingTextRef.current = '';
+          if (onUpdateAssistantMessageRef.current) {
+            onUpdateAssistantMessageRef.current(text, false);
+          }
           activeAudioRef.current = null;
           // If ended suspiciously fast (<150ms), treat as failure to trigger device fallback
           if (startedAt && Date.now() - startedAt < 150) {
@@ -751,18 +921,34 @@ export default function VoiceModeModal({
             resolve();
           }
         };
+
         audio.onerror = (e) => {
+          if (syncAnimFrameRef.current) {
+            cancelAnimationFrame(syncAnimFrameRef.current);
+            syncAnimFrameRef.current = null;
+          }
           activeAudioRef.current = null;
           reject(e);
         };
+
         const playPromise = audio.play();
         if (playPromise !== undefined) {
-          playPromise.catch(reject);
+          playPromise.catch((err) => {
+            if (syncAnimFrameRef.current) {
+              cancelAnimationFrame(syncAnimFrameRef.current);
+              syncAnimFrameRef.current = null;
+            }
+            reject(err);
+          });
         }
       });
 
       playedViaGemini = true;
     } catch (geminiErr) {
+      if (syncAnimFrameRef.current) {
+        cancelAnimationFrame(syncAnimFrameRef.current);
+        syncAnimFrameRef.current = null;
+      }
       console.warn('[Voice Mode] Gemini Neural TTS unavailable or blocked, falling back to device speech synthesis:', geminiErr);
     }
 
@@ -780,11 +966,20 @@ export default function VoiceModeModal({
       }
     }
 
+    if (syncAnimFrameRef.current) {
+      cancelAnimationFrame(syncAnimFrameRef.current);
+      syncAnimFrameRef.current = null;
+    }
     activeAudioRef.current = null;
     isAssistantSpeakingRef.current = false;
+    currentAssistantSpeechRef.current = '';
 
     if (isMountedRef.current && !isShuttingDownRef.current && voiceStateRef.current === 'speaking') {
       setCurrentAssistantSpeech('');
+      // If completed naturally without interruption, clear leftover interrupted context
+      interruptedContextRef.current = null;
+      wasInterruptedRef.current = false;
+
       if (resumeListeningTimerRef.current) {
         clearTimeout(resumeListeningTimerRef.current);
       }
@@ -794,7 +989,7 @@ export default function VoiceModeModal({
           updateVoiceState('listening');
           startListening();
         }
-      }, 700);
+      }, 500);
     }
   };
 
@@ -1094,7 +1289,11 @@ export default function VoiceModeModal({
           <div className="mt-2 text-center select-none">
             {voiceState === 'speaking' ? (
               <span className="text-xs font-medium text-[#E275AA] animate-pulse">
-                Gabby is speaking • Tap to interrupt
+                Gabby is speaking • Say &ldquo;Wait&rdquo; or tap to interrupt
+              </span>
+            ) : wasInterruptedRef.current && voiceState === 'listening' ? (
+              <span className="text-xs font-medium text-amber-300 animate-pulse">
+                Interrupted • Listening to you...
               </span>
             ) : voiceState === 'processing' ? (
               <span className="text-xs font-medium text-purple-300 animate-pulse">

@@ -79,6 +79,9 @@ class ChatRequest(BaseModel):
     customSystemInstruction: Optional[str] = None
     activeGem: Optional[str] = None
     attachedImage: Optional[Dict[str, Any]] = None
+    interruptedText: Optional[str] = None
+    interruptedContext: Optional[Any] = None
+    alreadySpokenText: Optional[str] = None
 
 class CreateChatRequest(BaseModel):
     title: str = "New Chat"
@@ -443,6 +446,40 @@ async def chat_stream(request: ChatRequest):
                 contents[-1].parts.insert(0, types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
             except Exception as img_err:
                 print(f"[Image Decode Warning]: {sanitize_error_message(str(img_err))}")
+
+        # Inject conversational interruption context if the user interrupted previous speech
+        interrupted_speech = request.interruptedText
+        if not interrupted_speech and request.interruptedContext:
+            if isinstance(request.interruptedContext, dict):
+                interrupted_speech = request.interruptedContext.get("remainingText") or request.interruptedContext.get("assistantText", "")
+            else:
+                interrupted_speech = str(request.interruptedContext)
+
+        already_spoken = (request.alreadySpokenText or "").strip()
+
+        if interrupted_speech and contents and contents[-1].role == "user":
+            clean_remaining = interrupted_speech.strip()
+            if len(clean_remaining) > 1200:
+                clean_remaining = clean_remaining[:1200] + "..."
+            clean_spoken = already_spoken[-350:] if len(already_spoken) > 350 else already_spoken
+            spoken_notice = f'You already spoke to the user: "{clean_spoken}"\n' if clean_spoken else ""
+
+            interruption_directive = (
+                f"[CONVERSATIONAL INTERRUPTION & AUTOMATIC CONTINUATION NOTICE]:\n"
+                f"You were speaking aloud to the user in voice mode.\n"
+                f"{spoken_notice}"
+                f"The user interrupted you and said: \"{user_prompt}\"\n\n"
+                f"You were about to say the following unspoken continuation before you were interrupted:\n"
+                f"\"{clean_remaining}\"\n\n"
+                f"CONVERSATIONAL INSTRUCTION:\n"
+                f"1. Directly acknowledge the user's remark (for example, if they said 'wait', 'okay', 'right', 'got it', warmly acknowledge it in 2-4 words like 'Got it!', 'All right!', or 'Sure thing!').\n"
+                f"2. AUTOMATICALLY continue seamlessly from where you stopped by delivering the unspoken continuation: \"{clean_remaining}\".\n"
+                f"3. Do NOT repeat what you already spoke; pick up right from where you stopped and flow naturally."
+            )
+            for part in contents[-1].parts:
+                if hasattr(part, "text") and part.text:
+                    part.text = f"{interruption_directive}\n\n[USER TRANSCRIPT]: {part.text}"
+                    break
 
         # Inject context (search / location) into final user turn if present
         extra_context = []

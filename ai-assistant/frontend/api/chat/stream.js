@@ -35,7 +35,9 @@ export default async function handler(req, res) {
     searchContext = null,
     locationContext = null,
     customSystemInstruction = null,
-    activeGem = null
+    activeGem = null,
+    interruptedText = null,
+    alreadySpokenText = null
   } = req.body || {};
 
   const userQuery = message || prompt;
@@ -187,6 +189,28 @@ SPOKEN VOICE DELIVERY RULES:
   }
 
   let finalPrompt = userQuery || (attachedImage ? 'Please analyze this image.' : 'Hello');
+  if (interruptedText && typeof interruptedText === 'string' && interruptedText.trim()) {
+    const rawRemaining = interruptedText.trim();
+    const cleanRemaining = rawRemaining.length > 1200 ? rawRemaining.slice(0, 1200) + '...' : rawRemaining;
+    const cleanSpoken = (alreadySpokenText && typeof alreadySpokenText === 'string') ? alreadySpokenText.trim().slice(-350) : '';
+    const spokenNotice = cleanSpoken ? `You already spoke to the user: "${cleanSpoken}"\n` : '';
+
+    finalPrompt = `[CONVERSATIONAL INTERRUPTION & AUTOMATIC CONTINUATION NOTICE]:
+You were speaking aloud to the user in voice mode.
+${spokenNotice}The user interrupted you and said:
+"${userQuery}"
+
+You were about to say the following unspoken continuation before you were interrupted:
+"${cleanRemaining}"
+
+CONVERSATIONAL INSTRUCTION:
+1. Directly acknowledge the user's remark (for example, if they said 'wait', 'okay', 'right', 'got it', warmly acknowledge it in 2-4 words like 'Got it!', 'All right!', or 'Sure thing!').
+2. AUTOMATICALLY continue seamlessly from where you stopped by delivering the unspoken continuation: "${cleanRemaining}".
+3. Do NOT repeat what you already spoke; pick up right from where you stopped and flow naturally.
+
+[USER TRANSCRIPT]:
+${finalPrompt}`;
+  }
   if (locationContext) {
     finalPrompt = `${locationContext}\n\n${finalPrompt}`;
   }

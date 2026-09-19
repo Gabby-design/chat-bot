@@ -127,6 +127,8 @@ async function streamGeminiDirect({
   customSystemInstruction = null,
   searchContext = null,
   locationContext = null,
+  interruptedText = null,
+  alreadySpokenText = null,
   signal,
   onToken,
   onChatId,
@@ -146,7 +148,9 @@ async function streamGeminiDirect({
       attachedImage,
       customSystemInstruction,
       searchContext,
-      locationContext
+      locationContext,
+      interruptedText,
+      alreadySpokenText
     }),
     signal
   });
@@ -1356,6 +1360,28 @@ function App() {
     await streamResponse(userMsg.content, activeChatId, currentImg, updatedHistory, activeLoc);
   };
 
+  const updateLastAssistantMessage = (content, isInProgress = true) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      if (updated.length > 0 && updated[updated.length - 1].role === 'assistant') {
+        const lastIdx = updated.length - 1;
+        updated[lastIdx] = {
+          ...updated[lastIdx],
+          content: content,
+          isInProgress: isInProgress
+        };
+      }
+      messagesRef.current = updated;
+      if (!isInProgress) {
+        const activeChatId = currentChatIdRef.current || currentChatId;
+        if (activeChatId) {
+          saveChatLocally(activeChatId, updated);
+        }
+      }
+      return updated;
+    });
+  };
+
   const handleVoiceMessage = async (spokenText, onChunk, interruptedContext = null) => {
     if (!spokenText || !spokenText.trim()) return '';
 
@@ -1375,7 +1401,7 @@ function App() {
     const priorHistory = (messagesRef.current || messages || [])
       .filter((m) => m && m.content && !m.isInProgress && (m.role === 'user' || m.role === 'assistant'));
 
-    // Append separate user and assistant bubbles immediately
+    // Append separate user and assistant bubbles immediately (starts with content: '' and isInProgress: true)
     const updatedHistory = [...priorHistory, userMsg, assistantMsg];
     messagesRef.current = updatedHistory;
     setMessages(updatedHistory);
@@ -1392,6 +1418,9 @@ function App() {
     const locSummary = getUserRealtimeContext(locationWeatherRef.current || locationWeather);
     let streamed = '';
 
+    const interruptedText = interruptedContext?.remainingText || interruptedContext?.assistantText || (typeof interruptedContext === 'string' ? interruptedContext : null);
+    const alreadySpokenText = interruptedContext?.spokenText || null;
+
     try {
       let response = null;
       try {
@@ -1404,7 +1433,9 @@ function App() {
             mode: 'voice',
             model: 'gemini-3.6-flash',
             conversationHistory: priorHistory,
-            locationContext: locSummary
+            locationContext: locSummary,
+            interruptedText: interruptedText || undefined,
+            alreadySpokenText: alreadySpokenText || undefined
           }),
           signal: controller.signal
         });
@@ -1412,29 +1443,12 @@ function App() {
         console.warn('Voice stream fetch failed, falling back to direct stream:', err);
       }
 
-      const typewriter = new TypewriterStreamer({
-        onUpdate: (typed) => {
-          setMessages((prev) => {
-            const updated = [...prev];
-            if (updated.length > 0) {
-              const lastIdx = updated.length - 1;
-              updated[lastIdx] = {
-                ...updated[lastIdx],
-                content: typed
-              };
-            }
-            messagesRef.current = updated;
-            return updated;
-          });
-          if (onChunk) onChunk(null, typed, false);
-        }
-      });
-      activeTypewriterRef.current = typewriter;
-
       if (!response || !response.ok) {
         // Fallback to streamGeminiDirect
         await streamGeminiDirect({
           prompt: spokenText,
+          interruptedText: interruptedText || undefined,
+          alreadySpokenText: alreadySpokenText || undefined,
           conversationHistory: priorHistory,
           modelSelection: 'gemini-3.6-flash',
           mode: 'voice',
@@ -1443,29 +1457,12 @@ function App() {
           signal: controller.signal,
           onResetBuffer: () => {
             streamed = '';
-            typewriter.reset();
           },
           onToken: (token) => {
             streamed += token;
-            typewriter.append(token);
           }
-        });
-        await new Promise((resolve) => {
-          typewriter.onComplete = (full) => resolve(full);
-          typewriter.finish();
         });
         if (onChunk) onChunk(null, streamed, true);
-        setMessages((latest) => {
-          const finalized = [...latest];
-          if (finalized.length > 0 && finalized[finalized.length - 1].role === 'assistant') {
-            finalized[finalized.length - 1] = {
-              ...finalized[finalized.length - 1],
-              isInProgress: false
-            };
-          }
-          saveChatLocally(activeChatId, finalized, isNew ? convTitle : null);
-          return finalized;
-        });
         return streamed;
       }
 
@@ -1489,25 +1486,8 @@ function App() {
               setIsStreaming(false);
               setIsLoading(false);
               abortControllerRef.current = null;
-              await new Promise((resolve) => {
-                typewriter.onComplete = (full) => resolve(full);
-                typewriter.finish();
-              });
               if (onChunk) onChunk(null, streamed, true);
               fetchChats();
-              setMessages((latest) => {
-                const finalized = [...latest];
-                if (finalized.length > 0 && finalized[finalized.length - 1].role === 'assistant') {
-                  finalized[finalized.length - 1] = {
-                    ...finalized[finalized.length - 1],
-                    content: streamed,
-                    isInProgress: false
-                  };
-                }
-                messagesRef.current = finalized;
-                saveChatLocally(activeChatId, finalized, isNew ? convTitle : null);
-                return finalized;
-              });
               return streamed;
             }
             try {
@@ -1522,12 +1502,10 @@ function App() {
               }
               if (parsed.type === 'reset_buffer') {
                 streamed = '';
-                typewriter.reset();
               }
               if (parsed.error) {
                 console.error('Server error received in voice stream:', parsed.error);
                 streamed = parsed.error;
-                typewriter.flush();
                 setMessages((prev) => {
                   const updated = [...prev];
                   if (updated.length > 0) {
@@ -1540,28 +1518,13 @@ function App() {
                 return parsed.error;
               }
               if (parsed.text) {
-                const newToken = parsed.text;
-                streamed += newToken;
-                typewriter.append(newToken);
+                streamed += parsed.text;
               }
             } catch (e) {}
           }
         }
       }
       if (onChunk) onChunk(null, streamed, true);
-      setMessages((latest) => {
-        const finalized = [...latest];
-        if (finalized.length > 0 && finalized[finalized.length - 1].role === 'assistant') {
-          finalized[finalized.length - 1] = {
-            ...finalized[finalized.length - 1],
-            content: streamed,
-            isInProgress: false
-          };
-        }
-        messagesRef.current = finalized;
-        saveChatLocally(activeChatId, finalized, isNew ? convTitle : null);
-        return finalized;
-      });
       return streamed;
     } catch (err) {
       if (err.name === 'AbortError' || err.name === 'DOMException' || String(err).toLowerCase().includes('abort')) {
@@ -3467,6 +3430,17 @@ function App() {
             if ('speechSynthesis' in window) {
               window.speechSynthesis.cancel();
             }
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated.length > 0 && updated[updated.length - 1].role === 'assistant' && updated[updated.length - 1].isInProgress) {
+                updated[updated.length - 1] = {
+                  ...updated[updated.length - 1],
+                  isInProgress: false
+                };
+              }
+              messagesRef.current = updated;
+              return updated;
+            });
           }}
           onSendMessage={handleVoiceMessage}
           onAbort={handleAbortStream}
@@ -3475,9 +3449,21 @@ function App() {
           selectedVoice={selectedGeminiVoice}
           onVoiceChange={setSelectedGeminiVoice}
           activeGem={activeGem}
+          onUpdateAssistantMessage={updateLastAssistantMessage}
           onType={() => {
             setIsVoiceModeOpen(false);
             stopGeminiVoice();
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated.length > 0 && updated[updated.length - 1].role === 'assistant' && updated[updated.length - 1].isInProgress) {
+                updated[updated.length - 1] = {
+                  ...updated[updated.length - 1],
+                  isInProgress: false
+                };
+              }
+              messagesRef.current = updated;
+              return updated;
+            });
             setTimeout(() => {
               const inputEl = document.querySelector('textarea');
               if (inputEl) inputEl.focus();

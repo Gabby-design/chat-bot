@@ -32,10 +32,25 @@ database.init_db()
 
 app = FastAPI(title="Gabby API", version="2.0.0")
 
-# Configure CORS for any origin
+# Configure CORS
+# ALLOWED_ORIGINS env var: comma-separated list of production origins.
+# Falls back to permissive localhost-only list for local dev.
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+if _raw_origins.strip():
+    _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+else:
+    _allowed_origins = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://.*",
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

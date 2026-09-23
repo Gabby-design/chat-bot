@@ -132,7 +132,8 @@ async function streamGeminiDirect({
   signal,
   onToken,
   onChatId,
-  onResetBuffer
+  onResetBuffer,
+  onStatus = null
 }) {
   const res = await fetch(`${API_BASE_URL}/api/chat/stream`, {
     method: 'POST',
@@ -193,6 +194,12 @@ async function streamGeminiDirect({
 
       if (parsed?.error) {
         throw new Error(parsed.error);
+      }
+
+      if (parsed?.type === 'status' && parsed?.message) {
+        if (onStatus) {
+          onStatus(parsed.message);
+        }
       }
 
       if (parsed?.type === 'chat_id' || parsed?.chat_id) {
@@ -690,19 +697,32 @@ function App() {
       const contentType = response.headers.get('content-type') || '';
       if (response.ok && contentType.includes('application/json')) {
         const data = await response.json();
-        // Crucial: Only merge when remote actually returns chats. NEVER wipe local storage with empty []
-        if (Array.isArray(data) && data.length > 0) {
-          const map = new Map();
-          localList.forEach((c) => map.set(c.id, c));
-          data.forEach((c) => map.set(c.id, { ...map.get(c.id), ...c }));
-          const merged = Array.from(map.values()).sort((a, b) => {
-            const timeA = new Date(a.updated_at || a.created_at || 0).getTime();
-            const timeB = new Date(b.updated_at || b.created_at || 0).getTime();
-            return timeB - timeA;
-          });
-          localStorage.setItem('gabby_conversations', JSON.stringify(merged));
-          localStorage.setItem('gabby_chats_cache', JSON.stringify(merged));
-          setChats(merged);
+        if (Array.isArray(data)) {
+          if (data.length === 0) {
+            // Server explicitly has zero chats: purge stale local caches so cleared chats stay cleared
+            localStorage.setItem('gabby_conversations', JSON.stringify([]));
+            localStorage.setItem('gabby_chats_cache', JSON.stringify([]));
+            setChats([]);
+          } else {
+            const localMap = new Map();
+            localList.forEach((c) => localMap.set(c.id, c));
+            // Reconcile: server is ground truth for existence; local cache enriches preview and messages
+            const merged = data.map((serverChat) => {
+              const local = localMap.get(serverChat.id) || {};
+              return {
+                ...local,
+                ...serverChat,
+                preview: local.preview || serverChat.title || 'New Chat'
+              };
+            }).sort((a, b) => {
+              const timeA = new Date(a.updated_at || a.created_at || 0).getTime();
+              const timeB = new Date(b.updated_at || b.created_at || 0).getTime();
+              return timeB - timeA;
+            });
+            localStorage.setItem('gabby_conversations', JSON.stringify(merged));
+            localStorage.setItem('gabby_chats_cache', JSON.stringify(merged));
+            setChats(merged);
+          }
         }
       }
     } catch (error) {
@@ -1243,6 +1263,19 @@ function App() {
         onToken: (token) => {
           finalStreamed += token;
           typewriter.append(token);
+        },
+        onStatus: (statusMsg) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            if (updated.length > 0) {
+              const lastIdx = updated.length - 1;
+              updated[lastIdx] = {
+                ...updated[lastIdx],
+                statusMessage: statusMsg
+              };
+            }
+            return updated;
+          });
         }
       });
 
@@ -1585,13 +1618,41 @@ function App() {
               toast.dismiss(t.id);
               const loadingToast = toast.loading('Clearing history...');
               try {
-                // Delete all chats
-                for (const chat of chats) {
-                  await fetch(`${API_BASE_URL}/api/chats/${chat.id}`, { method: 'DELETE' });
+                // 1. Bulk delete on server, with per-chat fallback
+                try {
+                  await fetch(`${API_BASE_URL}/api/chats`, { method: 'DELETE' });
+                } catch (bulkErr) {
+                  for (const chat of chats) {
+                    try {
+                      await fetch(`${API_BASE_URL}/api/chats/${chat.id}`, { method: 'DELETE' });
+                    } catch (err) {}
+                  }
                 }
+
+                // 2. Clear React state
                 setChats([]);
                 setCurrentChatId(null);
                 setMessages([]);
+
+                // 3. Purge all localStorage conversation and message caches
+                try {
+                  localStorage.removeItem('gabby_conversations');
+                  localStorage.removeItem('gabby_chats_cache');
+                  localStorage.setItem('gabby_conversations', JSON.stringify([]));
+                  localStorage.setItem('gabby_chats_cache', JSON.stringify([]));
+
+                  const keysToRemove = [];
+                  for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith('gabby_chat_msgs_')) {
+                      keysToRemove.push(key);
+                    }
+                  }
+                  keysToRemove.forEach((k) => localStorage.removeItem(k));
+                } catch (storageErr) {
+                  console.warn('Failed to clear local storage:', storageErr);
+                }
+
                 toast.dismiss(loadingToast);
                 toast.success('History cleared', {
                   style: {
@@ -2299,6 +2360,14 @@ function App() {
                               </a>
                             ))}
                           </div>
+                        </div>
+                      )}
+
+                      {/* Real-time Agent Status Pill (Tool execution / planning) */}
+                      {isStreaming && index === messages.length - 1 && msg.statusMessage && (
+                        <div className="inline-flex items-center gap-1.5 mb-2.5 px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-[11px] sm:text-xs text-[#c4c7c5] shadow-sm backdrop-blur-sm animate-pulse">
+                          <Sparkles size={12} className="text-[#a8c7fa] animate-spin" />
+                          <span>{msg.statusMessage}</span>
                         </div>
                       )}
 

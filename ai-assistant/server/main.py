@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response, JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import os
 import sys
@@ -16,6 +17,12 @@ import edge_tts
 from google import genai
 from google.genai import types
 import database
+from agent import default_orchestrator
+from agent.planner import TaskPlanner
+from agent.verifier import ToolVerifier
+from agent.specialists import select_specialist
+from rag.knowledge_store import default_knowledge_store
+from mcp import default_mcp_manager
 
 # Fix for Windows asyncio Proactor connection reset errors on client disconnect
 if sys.platform == "win32":
@@ -30,7 +37,21 @@ load_dotenv(override=True)
 # Initialize Database
 database.init_db()
 
-app = FastAPI(title="Gabby API", version="2.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize MCP manager
+    try:
+        await default_mcp_manager.initialize()
+    except Exception as e:
+        print(f"[MCP Startup Notice]: {e}")
+    yield
+    # Shutdown: Cleanly terminate MCP subprocesses
+    try:
+        await default_mcp_manager.shutdown()
+    except Exception as e:
+        print(f"[MCP Shutdown Notice]: {e}")
+
+app = FastAPI(title="Gabby API", version="2.0.0", lifespan=lifespan)
 
 # Configure CORS
 # ALLOWED_ORIGINS env var: comma-separated list of production origins.
@@ -116,6 +137,16 @@ class WeatherRequest(BaseModel):
     lon: Optional[float] = None
     city: Optional[str] = None
 
+class TaskPlanRequest(BaseModel):
+    task: str
+    context: Optional[Dict[str, Any]] = None
+
+class IngestKnowledgeRequest(BaseModel):
+    title: str
+    content: str
+    tags: Optional[List[str]] = None
+    source: Optional[str] = "api"
+
 # Voice Mapping from UI voices to high-speed Neural TTS voices
 VOICE_MAP = {
     "Aoede": "en-US-AnaNeural",
@@ -155,6 +186,15 @@ async def get_chat_history(chat_id: str):
         print(f"[Get Chat History Error]: {sanitize_error_message(str(e))}")
         return {"messages": []}
 
+@app.delete("/api/chats")
+async def delete_all_chats():
+    try:
+        database.delete_all_chats()
+        return {"success": True, "message": "All chats deleted"}
+    except Exception as e:
+        print(f"[Delete All Chats Error]: {sanitize_error_message(str(e))}")
+        return {"success": False, "error": sanitize_error_message(str(e))}
+
 @app.delete("/api/chats/{chat_id}")
 async def delete_chat(chat_id: str):
     try:
@@ -162,6 +202,102 @@ async def delete_chat(chat_id: str):
         return {"success": True}
     except Exception as e:
         print(f"[Delete Chat Error]: {sanitize_error_message(str(e))}")
+        return {"success": False}
+
+# ============================================================================
+# AGENT TASK PLANNING & KNOWLEDGE RAG ENDPOINTS
+# ============================================================================
+
+@app.post("/api/agent/task")
+async def plan_task(request: TaskPlanRequest):
+    """
+    Decomposes a complex prompt/task into an actionable execution plan
+    with tool assignments, intent breakdown, and acceptance criteria.
+    """
+    clean_task = (request.task or "").strip()
+    if not clean_task:
+        raise HTTPException(status_code=400, detail="Task cannot be empty")
+    try:
+        planner = TaskPlanner()
+        plan = planner.create_plan(clean_task)
+        specialist = select_specialist(clean_task)
+        verifier = ToolVerifier()
+        verification = verifier.verify_plan(plan)
+        return {
+            "task": clean_task,
+            "specialist": {
+                "name": specialist.name,
+                "title": specialist.display_title,
+                "preferred_tools": specialist.preferred_tools
+            },
+            "plan": plan.to_dict(),
+            "verification": verification.to_dict()
+        }
+    except Exception as e:
+        safe_err = sanitize_error_message(str(e))
+        print(f"[Task Plan Error]: {safe_err}")
+        raise HTTPException(status_code=500, detail=safe_err)
+
+@app.post("/api/knowledge/ingest")
+async def ingest_knowledge(request: IngestKnowledgeRequest):
+    """
+    Ingest a note, document, or snippet into Gabby's persistent knowledge base.
+    """
+    clean_content = (request.content or "").strip()
+    if not clean_content:
+        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    try:
+        snippet_id = default_knowledge_store.ingest(
+            title=request.title or "Untitled Note",
+            content=clean_content,
+            tags=request.tags or [],
+            source=request.source or "api"
+        )
+        return {
+            "success": True,
+            "id": snippet_id,
+            "title": request.title,
+            "message": "Knowledge snippet successfully indexed."
+        }
+    except Exception as e:
+        safe_err = sanitize_error_message(str(e))
+        print(f"[Knowledge Ingest Error]: {safe_err}")
+        raise HTTPException(status_code=500, detail=safe_err)
+
+@app.get("/api/knowledge/search")
+async def search_knowledge_endpoint(q: str = "", limit: int = 5, tag: Optional[str] = None):
+    """
+    Search the persistent knowledge base via full-text search and BM25 ranking.
+    """
+    try:
+        results = default_knowledge_store.search(query=q, limit=limit, tag=tag)
+        return {"query": q, "count": len(results), "results": results}
+    except Exception as e:
+        print(f"[Knowledge Search Error]: {sanitize_error_message(str(e))}")
+        return {"query": q, "count": 0, "results": []}
+
+@app.get("/api/knowledge/list")
+async def list_knowledge_endpoint(limit: int = 50):
+    """
+    List all knowledge snippets currently stored in SQLite.
+    """
+    try:
+        items = default_knowledge_store.list_all(limit=limit)
+        return {"count": len(items), "items": items}
+    except Exception as e:
+        print(f"[Knowledge List Error]: {sanitize_error_message(str(e))}")
+        return {"count": 0, "items": []}
+
+@app.delete("/api/knowledge/{snippet_id}")
+async def delete_knowledge_endpoint(snippet_id: str):
+    """
+    Delete a knowledge snippet by ID.
+    """
+    try:
+        success = default_knowledge_store.delete(snippet_id)
+        return {"success": success}
+    except Exception as e:
+        print(f"[Knowledge Delete Error]: {sanitize_error_message(str(e))}")
         return {"success": False}
 
 # ============================================================================
@@ -426,217 +562,21 @@ async def chat_stream(request: ChatRequest):
         if not user_prompt and not request.attachedImage:
             raise HTTPException(status_code=400, detail="Message or attached image is required")
 
-        chat_id = request.chat_id
-        if not chat_id:
-            chat_id = database.create_chat()
-        else:
-            database.ensure_chat_exists(chat_id)
-
-        # Atomically save user prompt in database
-        if user_prompt:
-            database.add_message(chat_id, "user", user_prompt)
-
-        # Retrieve normalized, strictly role-alternating history (user -> model -> user -> model)
-        # Sliced to 16 turns to keep fast TTFT while preserving deep conversational memory
-        clean_history = database.get_clean_history(chat_id, limit=16)
-
-        # Build Google GenAI Content items
-        contents = []
-        for msg in clean_history:
-            role = "user" if msg["role"] == "user" else "model"
-            contents.append(
-                types.Content(
-                    role=role,
-                    parts=[types.Part.from_text(text=msg["content"])]
-                )
-            )
-
-        # If user attached an image, insert it into the final user turn
-        if request.attachedImage and contents and contents[-1].role == "user":
-            try:
-                raw_base64 = request.attachedImage.get("base64", "")
-                mime_type = request.attachedImage.get("mimeType", "image/jpeg")
-                clean_b64 = re.sub(r'^data:image\/[a-z]+;base64,', '', raw_base64)
-                img_bytes = base64.b64decode(clean_b64)
-                contents[-1].parts.insert(0, types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
-            except Exception as img_err:
-                print(f"[Image Decode Warning]: {sanitize_error_message(str(img_err))}")
-
-        # Inject conversational interruption context if the user interrupted previous speech
-        interrupted_speech = request.interruptedText
-        if not interrupted_speech and request.interruptedContext:
-            if isinstance(request.interruptedContext, dict):
-                interrupted_speech = request.interruptedContext.get("remainingText") or request.interruptedContext.get("assistantText", "")
-            else:
-                interrupted_speech = str(request.interruptedContext)
-
-        already_spoken = (request.alreadySpokenText or "").strip()
-
-        if interrupted_speech and contents and contents[-1].role == "user":
-            clean_remaining = interrupted_speech.strip()
-            if len(clean_remaining) > 1200:
-                clean_remaining = clean_remaining[:1200] + "..."
-            clean_spoken = already_spoken[-350:] if len(already_spoken) > 350 else already_spoken
-            spoken_notice = f'You already spoke to the user: "{clean_spoken}"\n' if clean_spoken else ""
-
-            interruption_directive = (
-                f"[CONVERSATIONAL INTERRUPTION & AUTOMATIC CONTINUATION NOTICE]:\n"
-                f"You were speaking aloud to the user in voice mode.\n"
-                f"{spoken_notice}"
-                f"The user interrupted you and said: \"{user_prompt}\"\n\n"
-                f"You were about to say the following unspoken continuation before you were interrupted:\n"
-                f"\"{clean_remaining}\"\n\n"
-                f"CONVERSATIONAL INSTRUCTION:\n"
-                f"1. Directly acknowledge the user's remark (for example, if they said 'wait', 'okay', 'right', 'got it', warmly acknowledge it in 2-4 words like 'Got it!', 'All right!', or 'Sure thing!').\n"
-                f"2. AUTOMATICALLY continue seamlessly from where you stopped by delivering the unspoken continuation: \"{clean_remaining}\".\n"
-                f"3. Do NOT repeat what you already spoke; pick up right from where you stopped and flow naturally."
-            )
-            for part in contents[-1].parts:
-                if hasattr(part, "text") and part.text:
-                    part.text = f"{interruption_directive}\n\n[USER TRANSCRIPT]: {part.text}"
-                    break
-
-        # Inject context (search / location) into final user turn if present
-        extra_context = []
-        if request.locationContext:
-            extra_context.append(f"[LOCATION CONTEXT]:\n{request.locationContext}")
-        if request.searchContext:
-            extra_context.append(f"[WEB SEARCH CONTEXT]:\n{request.searchContext}")
-
-        if extra_context and contents and contents[-1].role == "user":
-            prefix = "\n\n".join(extra_context) + "\n\n"
-            # Prepend context to user text
-            for part in contents[-1].parts:
-                if hasattr(part, "text") and part.text:
-                    part.text = prefix + part.text
-                    break
-
-        async def generate():
-            client = get_genai_client(current_api_key)
-
-            # Unified Model Routing
-            model_selection = request.model or ""
-            configured_model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
-
-            if request.mode == "voice":
-                primary_model = "gemini-3.6-flash"
-                fallback_models = ["gemini-3.5-flash", "gemini-3.7-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
-            elif model_selection == "advanced":
-                primary_model = "gemini-2.5-pro"
-                fallback_models = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
-            elif model_selection in ("fast", "lite"):
-                primary_model = "gemini-3.5-flash-lite"
-                fallback_models = ["gemini-3.6-flash", "gemini-2.5-flash-lite"]
-            else:
-                primary_model = configured_model if configured_model != "gemini-2.5-flash" else "gemini-3.6-flash"
-                fallback_models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
-
-            models_to_try = [primary_model]
-            for m in fallback_models:
-                if m != primary_model and m not in models_to_try:
-                    models_to_try.append(m)
-
-            base_intelligence = (
-                "You are Gabby, a state-of-the-art AI assistant with top-tier intelligence, clarity, and depth—equivalent to ChatGPT Plus. "
-                "You are extraordinarily knowledgeable, insightful, articulate, and thoughtful. "
-                "You adapt seamlessly to any domain: deep coding, complex reasoning, creative writing, science, mathematics, analysis, and everyday chat. "
-                "Be direct, thorough, and smart, avoiding unnecessary fluff while providing high-value, accurate insights. "
-                "DIVERSITY & FRESH PERSPECTIVES: Never give carbon-copy or repetitive responses. If asked a similar or repeated question across conversations, approach it from a fresh creative angle."
-            )
-
-            if request.activeGem == 'code':
-                base_intelligence += "\nYou are Code Expert. Deliver robust, modular, clean code with syntax highlighting and best practices."
-            elif request.activeGem == 'writing':
-                base_intelligence += "\nYou are Writing Assistant. Deliver evocative prose, essays, articles, and refined communication."
-            elif request.activeGem == 'math':
-                base_intelligence += "\nYou are Math Tutor. Solve complex mathematical problems step-by-step with clear explanations."
-            elif request.activeGem == 'research':
-                base_intelligence += "\nYou are Research Assistant. Provide rigorous, fact-checked, structured analysis."
-
-            if request.mode == "voice":
-                system_instruction = (
-                    f"{base_intelligence}\n\n"
-                    "SPOKEN VOICE DELIVERY RULES:\n"
-                    "1. Deliver your full answer naturally in clear, flowing spoken English.\n"
-                    "2. Do NOT cut yourself short or arbitrarily limit your answer. Explain thoughts thoroughly and conversationally.\n"
-                    "3. Structure your response into well-formed sentences with natural breath pauses.\n"
-                    "4. NEVER output markdown symbols (no asterisks, hash signs, bullet points, or code backticks) since output is spoken aloud by a speech synthesizer. Express technical concepts conversationally in plain English sentences.\n"
-                    "5. Speak warmly and engagingly like a human conversation partner."
-                )
-            else:
-                system_instruction = (
-                    f"{base_intelligence}\n\n"
-                    "Format responses beautifully with Markdown, clear headings, bullet points, and code blocks when appropriate."
-                )
-
-            if request.customSystemInstruction:
-                system_instruction = f"{request.customSystemInstruction}\n\n{system_instruction}"
-
-            # Emit the active chat_id so frontend syncs immediately
-            yield f"data: {json.dumps({'type': 'chat_id', 'chat_id': chat_id})}\n\n"
-
-            full_response = ""
-            tokens_emitted = False
-
-            for i, model_name in enumerate(models_to_try):
-                try:
-                    response_stream = await client.aio.models.generate_content_stream(
-                        model=model_name,
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_instruction,
-                            temperature=0.7 if request.mode == "voice" else 0.9,
-                            top_p=0.95
-                        )
-                    )
-
-                    async for chunk in response_stream:
-                        if chunk.text:
-                            full_response += chunk.text
-                            tokens_emitted = True
-                            yield f"data: {json.dumps({'text': chunk.text})}\n\n"
-
-                    # Successfully finished stream: save assistant message and emit [DONE]
-                    if full_response.strip():
-                        database.add_message(chat_id, "assistant", full_response)
-                    yield "data: [DONE]\n\n"
-                    return
-
-                except Exception as e:
-                    raw_err = str(e)
-                    safe_err = sanitize_error_message(raw_err)
-                    print(f"[Model {model_name} Error]: {safe_err}")
-
-                    # Leaked key / non-retryable 403
-                    if "403" in raw_err or "leaked" in raw_err.lower():
-                        yield f"data: {json.dumps({'error': 'API Key Error (403): Your Gemini API key was flagged as invalid or expired. Please update server/.env.'})}\n\n"
-                        return
-
-                    is_retryable = any(
-                        err_token in raw_err.lower()
-                        for err_token in ["503", "429", "500", "502", "504", "unavailable", "quota", "overloaded", "high demand", "404", "not found"]
-                    )
-
-                    if is_retryable and i < len(models_to_try) - 1:
-                        next_model = models_to_try[i + 1]
-                        print(f"Switching from {model_name} to fallback {next_model}...")
-
-                        # CRITICAL FIX: If tokens were already emitted to the user,
-                        # instruct the client to reset its buffer before fallback generation starts!
-                        if tokens_emitted:
-                            yield f"data: {json.dumps({'type': 'reset_buffer'})}\n\n"
-                            tokens_emitted = False
-
-                        full_response = ""
-                        await asyncio.sleep(0.3)
-                        continue
-                    else:
-                        # All models exhausted
-                        yield f"data: {json.dumps({'error': f'Service temporarily unavailable: {safe_err}'})}\n\n"
-                        return
-
         return StreamingResponse(
-            generate(),
+            default_orchestrator.stream_chat(
+                prompt=user_prompt,
+                chat_id=request.chat_id,
+                mode=request.mode,
+                model_selection=request.model,
+                active_gem=request.activeGem,
+                attached_image=request.attachedImage,
+                location_context=request.locationContext,
+                search_context=request.searchContext,
+                custom_system_instruction=request.customSystemInstruction,
+                interrupted_text=request.interruptedText,
+                already_spoken_text=request.alreadySpokenText,
+                api_key=current_api_key
+            ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

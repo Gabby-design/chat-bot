@@ -206,3 +206,12 @@ def delete_chat(chat_id: str):
         cursor.execute('DELETE FROM chats WHERE id = ?', (chat_id,))
         conn.commit()
 
+def delete_all_chats():
+    """Delete all chats and cascade-delete all messages."""
+    with _get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM messages;')
+        cursor.execute('DELETE FROM chats;')
+        conn.commit()
+
+

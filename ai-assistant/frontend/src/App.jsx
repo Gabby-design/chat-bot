@@ -1,12 +1,13 @@
 // src/App.jsx
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, RotateCw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff, Download, Brain, Globe, Maximize2, ExternalLink, MapPin, Wrench, Database } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, RotateCw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff, Download, Brain, Globe, Maximize2, ExternalLink, MapPin, Wrench, Database, Key } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast, { Toaster } from 'react-hot-toast';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import VoiceModeModal from './components/VoiceModeModal.jsx';
 import LocationPrimingModal from './components/LocationPrimingModal.jsx';
+import ApiKeyModal from './components/ApiKeyModal.jsx';
 import WeatherChip from './components/WeatherChip.jsx';
 import KnowledgeManager from './components/KnowledgeManager.jsx';
 import { TableBlock, CodeBlock, GeminiSparkle } from './components/MarkdownBlocks.jsx';
@@ -137,10 +138,17 @@ async function streamGeminiDirect({
   onStatus = null,
   onToolEvent = null
 }) {
+  const customApiKey = typeof window !== 'undefined' ? localStorage.getItem('gabby_gemini_api_key') : null;
+  const headers = { 'Content-Type': 'application/json' };
+  if (customApiKey && customApiKey.trim()) {
+    headers['x-gemini-api-key'] = customApiKey.trim();
+  }
+
   const res = await fetch(`${API_BASE_URL}/api/chat/stream`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
+      apiKey: customApiKey ? customApiKey.trim() : undefined,
       message: prompt,
       prompt,
       chat_id: chatId,
@@ -371,6 +379,16 @@ function App() {
     });
   };
 
+  // API Key State
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [hasCustomApiKey, setHasCustomApiKey] = useState(() => {
+    try {
+      return !!localStorage.getItem('gabby_gemini_api_key');
+    } catch (_) {
+      return false;
+    }
+  });
+
   // Location & Real-Time Weather State
   const [locationWeather, setLocationWeather] = useState(() => getCachedLocationWeather());
   const [isWeatherChipDismissed, setIsWeatherChipDismissed] = useState(false);
@@ -552,7 +570,7 @@ function App() {
     }
 
     const handleBeforeInstall = (e) => {
-      e.preventDefault();
+      // Retain prompt reference without suppressing natural browser banner
       setInstallPrompt(e);
     };
 
@@ -1375,6 +1393,28 @@ function App() {
       console.error('Stream error', err);
       let displayError = err.message || 'An unexpected error occurred';
       if (
+        displayError.includes('API Key') ||
+        displayError.includes('API_KEY') ||
+        displayError.includes('Quota Exceeded') ||
+        displayError.includes('403 Permission Denied') ||
+        displayError.includes('429')
+      ) {
+        toast((t) => (
+          <div className="text-xs space-y-1.5 py-1">
+            <p className="font-semibold text-white">Gemini API Key Required or Limit Reached</p>
+            <p className="text-[#c4c7c5]">You can configure a direct Google Gemini API key to continue chatting.</p>
+            <button
+              onClick={() => {
+                toast.dismiss(t.id);
+                setIsApiKeyModalOpen(true);
+              }}
+              className="mt-1 px-3 py-1 bg-[#4E80EE] hover:bg-[#3b6ecc] text-white rounded-lg text-[11px] font-medium transition-colors"
+            >
+              Configure API Key
+            </button>
+          </div>
+        ), { duration: 9000, style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' } });
+      } else if (
         displayError.includes('503') ||
         displayError.includes('high demand') ||
         displayError.includes('UNAVAILABLE') ||
@@ -1535,10 +1575,17 @@ function App() {
     try {
       let response = null;
       try {
+        const customApiKey = typeof window !== 'undefined' ? localStorage.getItem('gabby_gemini_api_key') : null;
+        const voiceHeaders = { 'Content-Type': 'application/json' };
+        if (customApiKey && customApiKey.trim()) {
+          voiceHeaders['x-gemini-api-key'] = customApiKey.trim();
+        }
+
         response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: voiceHeaders,
           body: JSON.stringify({
+            apiKey: customApiKey ? customApiKey.trim() : undefined,
             message: spokenText,
             chat_id: activeChatId || undefined,
             mode: 'voice',
@@ -2225,8 +2272,22 @@ function App() {
             )}
           </div>
 
-          {/* Right: Rotate View, Live Voice mode, and New chat button */}
+          {/* Right: API Key, Rotate View, Live Voice mode, and New chat button */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Custom Gemini API Key Button */}
+            <button
+              type="button"
+              onClick={() => setIsApiKeyModalOpen(true)}
+              className={`tap-target rounded-full border transition-colors flex items-center justify-center cursor-pointer touch-manipulation ${
+                hasCustomApiKey
+                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                  : 'border-white/10 hover:border-white/20 text-[#8a8a8e] hover:text-white bg-transparent'
+              }`}
+              title={hasCustomApiKey ? 'Custom Gemini API Key active (Click to edit)' : 'Configure Gemini API Key'}
+              aria-label="Configure Gemini API Key"
+            >
+              <Key className="icon-md" />
+            </button>
             {/* Manual Rotate View Button */}
             <button
               type="button"
@@ -3698,6 +3759,15 @@ function App() {
         onSkip={handleSkipLocation}
         initialError={locationModalError}
         isLoading={isLocationLoading}
+      />
+
+      {/* Google Gemini API Key Configuration Modal */}
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => {
+          setIsApiKeyModalOpen(false);
+          setHasCustomApiKey(!!localStorage.getItem('gabby_gemini_api_key'));
+        }}
       />
 
       {/* Vercel Speed Insights */}

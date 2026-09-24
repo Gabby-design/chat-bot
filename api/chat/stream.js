@@ -5,7 +5,7 @@
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-gemini-api-key');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -15,12 +15,15 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
+  const clientKey = req.headers['x-gemini-api-key'] || req.body?.apiKey;
+  const rawKey = clientKey || process.env.GEMINI_API_KEY || '';
+  const apiKey = typeof rawKey === 'string' ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
+
+  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.write(`data: ${JSON.stringify({ error: 'GEMINI_API_KEY is not configured on the server. Please set GEMINI_API_KEY in your Vercel Project Settings.' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ error: 'GEMINI_API_KEY is not configured or is a placeholder. Please set a valid Gemini API key in your Vercel Project Settings or enter one in the app.' })}\n\n`);
     res.write('data: [DONE]\n\n');
     return res.end();
   }
@@ -275,12 +278,26 @@ ${finalPrompt}`;
       });
 
       if (!upstream.ok) {
-        let errText = '';
+        let errSnippet = '';
+        let parsedErr = null;
         try {
-          errText = await upstream.text();
+          errSnippet = await upstream.text();
+          try {
+            parsedErr = JSON.parse(errSnippet);
+          } catch (_) {}
         } catch (_) {}
-        console.warn(`Model ${m} failed (HTTP ${upstream.status}):`, errText.slice(0, 160));
-        lastErrorDetail = `HTTP ${upstream.status}: ${errText.slice(0, 160)}`;
+
+        const specificMsg = parsedErr?.error?.message || errSnippet.slice(0, 240);
+        const errCode = parsedErr?.error?.status || upstream.status;
+        console.warn(`Model ${m} failed (HTTP ${upstream.status} ${errCode}):`, specificMsg);
+
+        lastErrorDetail = {
+          model: m,
+          status: upstream.status,
+          code: errCode,
+          message: specificMsg
+        };
+
         if (upstream.status === 503 || upstream.status === 429) {
           // Brief pause on temporary spike / rate-limit before trying fallback model
           await new Promise((resolve) => setTimeout(resolve, 300));
@@ -316,7 +333,12 @@ ${finalPrompt}`;
       return res.end();
     } catch (err) {
       console.warn(`Model ${m} stream attempt notice:`, err.message);
-      lastErrorDetail = err.message;
+      lastErrorDetail = {
+        model: m,
+        status: 500,
+        code: 'NETWORK_OR_PARSING_ERROR',
+        message: err.message
+      };
       if (tokensEmitted) {
         res.write(`data: ${JSON.stringify({ type: 'reset_buffer' })}\n\n`);
         tokensEmitted = false;
@@ -324,10 +346,22 @@ ${finalPrompt}`;
     }
   }
 
-  const isHighDemand = lastErrorDetail && (lastErrorDetail.includes('503') || lastErrorDetail.includes('high demand') || lastErrorDetail.includes('UNAVAILABLE'));
-  const userErrorMsg = isHighDemand
-    ? 'Google Gemini is temporarily experiencing high demand. Please try again shortly or click Regenerate.'
-    : 'Google Gemini service is temporarily busy. Please try again in a few moments.';
+  let userErrorMsg = 'Google Gemini service is temporarily busy. Please try again in a few moments.';
+  if (lastErrorDetail) {
+    const { status, code, message } = lastErrorDetail;
+    const lower = (message || '').toLowerCase();
+    if (status === 400 && (lower.includes('api key') || lower.includes('api_key') || lower.includes('invalid') || lower.includes('key not valid'))) {
+      userErrorMsg = `Gemini API Key Error (400 Invalid Key): ${message}. Please check GEMINI_API_KEY in Vercel Project Settings or enter a custom key in app Settings.`;
+    } else if (status === 403) {
+      userErrorMsg = `Gemini API Error (403 Permission Denied): ${message}. Please verify your API key is enabled in Google AI Studio.`;
+    } else if (status === 429) {
+      userErrorMsg = `Gemini API Error (429 Quota Exceeded): ${message}. Your Google AI Studio rate limit or quota has been reached.`;
+    } else if (status === 503 || lower.includes('high demand') || lower.includes('unavailable')) {
+      userErrorMsg = `Google Gemini is temporarily experiencing high demand (503). Please retry in a few moments or click Regenerate.`;
+    } else {
+      userErrorMsg = `Google Gemini Error (${status} ${code || ''}): ${message || 'Upstream request failed'}`;
+    }
+  }
 
   res.write(`data: ${JSON.stringify({ error: userErrorMsg })}\n\n`);
   return res.end();

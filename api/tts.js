@@ -2,7 +2,6 @@
 // Serverless TTS endpoint for Gemini Neural Voice synthesis
 // Securely accesses process.env.GEMINI_API_KEY on the server only
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 function pcmToWavBuffer(cleanBase64, sampleRate = 24000, numChannels = 1) {
   const pcmBytes = Buffer.from(cleanBase64, 'base64');
@@ -36,7 +35,7 @@ function pcmToWavBuffer(cleanBase64, sampleRate = 24000, numChannels = 1) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-gemini-api-key');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -46,8 +45,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!GEMINI_API_KEY) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server. Please set GEMINI_API_KEY in your Vercel Project Settings.' });
+  const clientKey = req.headers['x-gemini-api-key'] || req.body?.apiKey;
+  const rawKey = clientKey || process.env.GEMINI_API_KEY || '';
+  const GEMINI_API_KEY = typeof rawKey === 'string' ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
+
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
+    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured or is a placeholder. Please set GEMINI_API_KEY in your Vercel Project Settings or provide an API key in settings.' });
   }
 
   const { text, voice = 'Aoede' } = req.body || {};

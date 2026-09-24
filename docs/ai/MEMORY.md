@@ -8,7 +8,9 @@
 - Completed Phase 3: RAG KnowledgeStore with SQLite FTS5, BM25 ranking, search_knowledge & store_knowledge tools, and knowledge management endpoints.
 - Completed Phase 4: Model Context Protocol (MCP) engine (stdio JSON-RPC client, MCPManager, mcp_config.json, /api/mcp/servers, and /api/mcp/reload).
 - Fixed Google Gemini model resilience: eliminated deprecated 404/503 models, configured robust fallback chain with Gemini 3.8 Flash, 3.6 Flash, 3.5 Flash Lite, and 3.1 Flash Lite.
-- Fixed PWA beforeinstallprompt lifecycle handling and user-facing high-demand error parsing in App.jsx.
+- Fixed stream error opacity: parse raw upstream Google API error JSON (400 Invalid Key, 403 Permission Denied, 429 Quota Exceeded, 503 High Demand) instead of masking behind generic service busy messages.
+- Added client-side Gemini API key configuration modal and x-gemini-api-key header forwarding to bypass Vercel server key limits.
+- Resolved PWA console warning by removing e.preventDefault() on beforeinstallprompt so browser banner renders cleanly.
 - All 10 automated test suites passing cleanly; frontend builds with 0 errors.
 
 ## Fixed Decisions

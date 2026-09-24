@@ -5,7 +5,7 @@
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-gemini-api-key');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-gemini-api-key, Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -17,7 +17,10 @@ export default async function handler(req, res) {
 
   const clientKey = req.headers['x-gemini-api-key'] || req.body?.apiKey;
   const rawKey = clientKey || process.env.GEMINI_API_KEY || '';
-  const apiKey = typeof rawKey === 'string' ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
+  let apiKey = typeof rawKey === 'string' ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
+  if (apiKey.toLowerCase().startsWith('bearer ')) {
+    apiKey = apiKey.slice(7).trim();
+  }
 
   if (!apiKey || apiKey === 'your_gemini_api_key_here') {
     res.setHeader('Content-Type', 'text/event-stream');
@@ -263,13 +266,24 @@ ${finalPrompt}`;
 
   let lastErrorDetail = null;
 
+  const isOAuthToken = apiKey.startsWith('ya29.');
+  const upstreamHeaders = {
+    'Content-Type': 'application/json'
+  };
+  if (isOAuthToken) {
+    upstreamHeaders['Authorization'] = `Bearer ${apiKey}`;
+  } else {
+    upstreamHeaders['x-goog-api-key'] = apiKey;
+  }
+
   for (const m of modelsToTry) {
     let tokensEmitted = false;
     try {
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${apiKey}`;
+      const queryParam = isOAuthToken ? '' : `&key=${encodeURIComponent(apiKey)}`;
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse${queryParam}`;
       const upstream = await fetch(geminiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: upstreamHeaders,
         body: JSON.stringify({
           contents,
           systemInstruction: { parts: [{ text: systemInstructionText }] },
@@ -352,6 +366,8 @@ ${finalPrompt}`;
     const lower = (message || '').toLowerCase();
     if (status === 400 && (lower.includes('api key') || lower.includes('api_key') || lower.includes('invalid') || lower.includes('key not valid'))) {
       userErrorMsg = `Gemini API Key Error (400 Invalid Key): ${message}. Please check GEMINI_API_KEY in Vercel Project Settings or enter a custom key in app Settings.`;
+    } else if (status === 401) {
+      userErrorMsg = `Gemini Authentication Error (401 Unauthenticated): ${message}. Please check that GEMINI_API_KEY in Vercel Project Settings or your custom key in app Settings is an active API key from Google AI Studio (https://aistudio.google.com/apikey).`;
     } else if (status === 403) {
       userErrorMsg = `Gemini API Error (403 Permission Denied): ${message}. Please verify your API key is enabled in Google AI Studio.`;
     } else if (status === 429) {

@@ -18,20 +18,22 @@ export default function ApiKeyModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   const handleSave = () => {
-    const clean = apiKey.trim().replace(/^["']|["']$/g, '');
+    let clean = apiKey.trim().replace(/^["']|["']$/g, '');
+    if (clean.toLowerCase().startsWith('bearer ')) {
+      clean = clean.slice(7).trim();
+    }
     if (!clean) {
       localStorage.removeItem('gabby_gemini_api_key');
       setSavedKeyExists(false);
       toast.success('Reset to server default API key', {
-        icon: '🔄',
         style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
       });
       onClose();
       return;
     }
 
-    if (!clean.startsWith('AIza')) {
-      toast.error('Gemini API keys typically start with "AIza". Please check your key.', {
+    if (!clean.startsWith('AIza') && !clean.startsWith('AQ.')) {
+      toast.error('Gemini API keys typically start with "AIza" or "AQ.". Please check your key.', {
         style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
       });
     }
@@ -39,7 +41,6 @@ export default function ApiKeyModal({ isOpen, onClose }) {
     localStorage.setItem('gabby_gemini_api_key', clean);
     setSavedKeyExists(true);
     toast.success('Gemini API key saved for this browser!', {
-      icon: '🔑',
       style: { background: '#1E1E1E', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
     });
     onClose();
@@ -108,7 +109,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
               type={showKey ? 'text' : 'password'}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="AIzaSy..."
+              placeholder="AIzaSy... or AQ...."
               className="w-full bg-[#131314] border border-white/15 focus:border-[#70CFFF] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-[#8e918f] outline-none font-mono pr-10 transition-colors"
             />
             <button

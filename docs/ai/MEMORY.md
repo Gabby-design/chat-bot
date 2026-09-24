@@ -9,6 +9,7 @@
 - Completed Phase 4: Model Context Protocol (MCP) engine (stdio JSON-RPC client, MCPManager, mcp_config.json, /api/mcp/servers, and /api/mcp/reload).
 - Fixed Google Gemini model resilience: eliminated deprecated 404/503 models, configured robust fallback chain with Gemini 3.8 Flash, 3.6 Flash, 3.5 Flash Lite, and 3.1 Flash Lite.
 - Fixed stream error opacity: parse raw upstream Google API error JSON (400 Invalid Key, 403 Permission Denied, 429 Quota Exceeded, 503 High Demand) instead of masking behind generic service busy messages.
+- Fixed Gemini upstream authentication: added dual-auth header (x-goog-api-key) and query-param fallback supporting modern Google AI Studio keys (AQ. and AIza), OAuth access token (ya29.) detection, Bearer prefix sanitization, and explicit 401 unauthenticated diagnostic reporting.
 - Added client-side Gemini API key configuration modal and x-gemini-api-key header forwarding to bypass Vercel server key limits.
 - Resolved PWA console warning by removing e.preventDefault() on beforeinstallprompt so browser banner renders cleanly.
 - All 10 automated test suites passing cleanly; frontend builds with 0 errors.

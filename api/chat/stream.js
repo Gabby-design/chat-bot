@@ -2,10 +2,37 @@
 // Serverless streaming endpoint for Gemini chat and voice responses
 // Securely accesses process.env.GEMINI_API_KEY on the server only
 
+// In-memory sliding window rate limiter per IP for public abuse protection
+const ipRequestHistory = new Map();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 30; // Max 30 requests per IP per minute
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const timestamps = ipRequestHistory.get(ip) || [];
+  const validTimestamps = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+  if (validTimestamps.length >= MAX_REQUESTS_PER_WINDOW) {
+    ipRequestHistory.set(ip, validTimestamps);
+    return false;
+  }
+  validTimestamps.push(now);
+  ipRequestHistory.set(ip, validTimestamps);
+
+  // Periodic cleanup if map grows large
+  if (ipRequestHistory.size > 1000) {
+    for (const [key, list] of ipRequestHistory.entries()) {
+      if (list.every(t => now - t >= RATE_LIMIT_WINDOW_MS)) {
+        ipRequestHistory.delete(key);
+      }
+    }
+  }
+  return true;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-gemini-api-key, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -15,18 +42,30 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const clientKey = req.headers['x-gemini-api-key'] || req.body?.apiKey;
-  const rawKey = clientKey || process.env.GEMINI_API_KEY || '';
+  // Rate limiting for public endpoint protection
+  const clientIp = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+  if (!checkRateLimit(clientIp)) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.write(`data: ${JSON.stringify({ error: 'Too many requests. Please wait a moment before sending another message.' })}\n\n`);
+    res.write('data: [DONE]\n\n');
+    return res.end();
+  }
+
+  // Credentials are owned by the application owner on the server runtime only
+  const rawKey = process.env.GEMINI_API_KEY || '';
   let apiKey = typeof rawKey === 'string' ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
   if (apiKey.toLowerCase().startsWith('bearer ')) {
     apiKey = apiKey.slice(7).trim();
   }
 
   if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+    console.error('[Server Error] GEMINI_API_KEY is not configured on the server runtime.');
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.write(`data: ${JSON.stringify({ error: 'GEMINI_API_KEY is not configured or is a placeholder. Please set a valid Gemini API key in your Vercel Project Settings or enter one in the app.' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ error: 'Gabby AI is currently undergoing brief maintenance. Please try again in a few moments.' })}\n\n`);
     res.write('data: [DONE]\n\n');
     return res.end();
   }
@@ -364,18 +403,16 @@ ${finalPrompt}`;
   if (lastErrorDetail) {
     const { status, code, message } = lastErrorDetail;
     const lower = (message || '').toLowerCase();
-    if (status === 400 && (lower.includes('api key') || lower.includes('api_key') || lower.includes('invalid') || lower.includes('key not valid'))) {
-      userErrorMsg = `Gemini API Key Error (400 Invalid Key): ${message}. Please check GEMINI_API_KEY in Vercel Project Settings or enter a custom key in app Settings.`;
-    } else if (status === 401) {
-      userErrorMsg = `Gemini Authentication Error (401 Unauthenticated): ${message}. Please check that GEMINI_API_KEY in Vercel Project Settings or your custom key in app Settings is an active API key from Google AI Studio (https://aistudio.google.com/apikey).`;
-    } else if (status === 403) {
-      userErrorMsg = `Gemini API Error (403 Permission Denied): ${message}. Please verify your API key is enabled in Google AI Studio.`;
+    console.error(`[Upstream Gemini Error ${status} ${code}]:`, message);
+
+    if (status === 401 || status === 403) {
+      userErrorMsg = 'Gabby AI service is temporarily undergoing brief maintenance. Please try again in a few moments.';
     } else if (status === 429) {
-      userErrorMsg = `Gemini API Error (429 Quota Exceeded): ${message}. Your Google AI Studio rate limit or quota has been reached.`;
+      userErrorMsg = 'Gabby is receiving high volume right now. Please wait a moment and retry.';
     } else if (status === 503 || lower.includes('high demand') || lower.includes('unavailable')) {
-      userErrorMsg = `Google Gemini is temporarily experiencing high demand (503). Please retry in a few moments or click Regenerate.`;
+      userErrorMsg = 'Google Gemini is temporarily experiencing high demand. Please try again shortly or click Regenerate.';
     } else {
-      userErrorMsg = `Google Gemini Error (${status} ${code || ''}): ${message || 'Upstream request failed'}`;
+      userErrorMsg = 'Gabby was unable to complete the response. Please try again in a few moments.';
     }
   }
 

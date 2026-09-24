@@ -35,7 +35,7 @@ function pcmToWavBuffer(cleanBase64, sampleRate = 24000, numChannels = 1) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-gemini-api-key, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -45,15 +45,15 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const clientKey = req.headers['x-gemini-api-key'] || req.body?.apiKey;
-  const rawKey = clientKey || process.env.GEMINI_API_KEY || '';
+  const rawKey = process.env.GEMINI_API_KEY || '';
   let GEMINI_API_KEY = typeof rawKey === 'string' ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
   if (GEMINI_API_KEY.toLowerCase().startsWith('bearer ')) {
     GEMINI_API_KEY = GEMINI_API_KEY.slice(7).trim();
   }
 
   if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured or is a placeholder. Please set GEMINI_API_KEY in your Vercel Project Settings or provide an API key in settings.' });
+    console.error('[Server Error] GEMINI_API_KEY is not configured on the server runtime.');
+    return res.status(503).json({ error: 'Speech synthesis is temporarily unavailable.' });
   }
 
   const { text, voice = 'Aoede' } = req.body || {};
@@ -126,10 +126,8 @@ export default async function handler(req, res) {
           const errData = await response.json();
           errSnippet = errData?.error?.message || '';
         } catch (_) {}
-        if (response.status === 401) {
-          lastErrorMsg = `Gemini Authentication Error (401 Unauthenticated): ${errSnippet || 'Invalid credentials'}. Verify GEMINI_API_KEY is active in Google AI Studio.`;
-        }
-        console.warn(`[TTS] Model ${model} returned status ${response.status}:`, errSnippet);
+        console.error(`[TTS Error ${response.status}]:`, errSnippet);
+        lastErrorMsg = 'Speech synthesis is temporarily unavailable.';
         continue;
       }
 
@@ -155,5 +153,5 @@ export default async function handler(req, res) {
     }
   }
 
-  return res.status(500).json({ error: lastErrorMsg || 'Failed to synthesize Gemini speech' });
+  return res.status(503).json({ error: lastErrorMsg || 'Speech synthesis is temporarily unavailable.' });
 }

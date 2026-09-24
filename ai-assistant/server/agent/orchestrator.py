@@ -89,12 +89,12 @@ class AgentOrchestrator:
         """
         Main execution generator yielding SSE events to the client.
         """
-        raw_key = api_key or os.getenv("GEMINI_API_KEY", "")
+        raw_key = os.getenv("GEMINI_API_KEY") or api_key or ""
         current_key = raw_key.strip().strip("'\"") if raw_key else ""
         if current_key.lower().startswith("bearer "):
             current_key = current_key[7:].strip()
         if not current_key:
-            yield f"data: {json.dumps({'error': 'Gemini API key is not configured in server/.env'})}\n\n"
+            yield f"data: {json.dumps({'error': 'Gabby AI service is temporarily unavailable. Please try again shortly.'})}\n\n"
             return
 
         # Initialize or resolve chat ID

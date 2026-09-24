@@ -4,10 +4,11 @@
 
 ## Current Position
 
-- Completed Phase 2 (Orchestrator package exports & /api/agent/task planning endpoint).
-- Completed Phase 3 (RAG KnowledgeStore with SQLite FTS5, BM25 ranking, search_knowledge & store_knowledge tools, and knowledge management endpoints).
+- Completed Phase 2: Orchestrator package exports & /api/agent/task planning endpoint.
+- Completed Phase 3: RAG KnowledgeStore with SQLite FTS5, BM25 ranking, search_knowledge & store_knowledge tools, and knowledge management endpoints.
+- Completed Phase 4: Model Context Protocol (MCP) engine (stdio JSON-RPC client, MCPManager, mcp_config.json, /api/mcp/servers, and /api/mcp/reload).
 - Fixed conversation history resurrection bug: added atomic `DELETE /api/chats` endpoint and synchronized ground-truth cache purge across backend, React state, and browser localStorage.
-- All 9 automated test suites in `test_agent_suite.py` passing cleanly.
+- All 10 automated test suites in `test_agent_suite.py` passing cleanly.
 - Frontend and backend daemons active and listening on ports 3000 and 8000.
 - Zero git commits or pushes made. Ready for owner testing.
 
@@ -29,6 +30,10 @@
 - Neural text-to-speech with edge-tts and Web Speech API fallback.
 - Voice mode with real-time barge-in interruption detection and speech continuation.
 - Native tool routing with Gemini function calling and tool verification.
+- Semantic RAG Knowledge Base with SQLite FTS5 BM25 search and automatic prompt context injection.
+- Model Context Protocol (MCP) stdio JSON-RPC client and dynamic server manager.
+- In-chat collapsible tool execution cards displaying real-time arguments, outcomes, and verification badges.
+- Frontend Knowledge & MCP Manager with document file upload, manual snippet indexing, and live server reload.
 
 ## Environment
 
@@ -43,7 +48,7 @@
 
 ## Deferred Work
 
-- Optional external MCP servers integration if desktop local execution requires IDE bindings.
+- None. All phases (0 through 5) complete.
 
 ## Deviations
 

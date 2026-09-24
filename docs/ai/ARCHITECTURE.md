@@ -61,11 +61,31 @@ Task Planner & Verifier    Tool Router (Registry & Execution Sandbox)
                                 ├── Weather & Geocoding (Open-Meteo)
                                 ├── Safe Calculator (AST Evaluator)
                                 ├── Sandboxed Workspace (ai-assistant/workspace/)
-                                └── Curated Public APIs (allowlisted HTTPS)
+                                ├── Curated Public APIs (allowlisted HTTPS)
+                                ├── RAG Knowledge Base (SQLite FTS5 BM25 Search)
+                                └── External Model Context Protocol (MCP) Tools
        │
        ▼
 Gemini GenAI SDK (Native function calling & structured streaming)
 ```
+
+## 7. Subsystems
+
+### 7.1. RAG Knowledge Store (`ai-assistant/server/rag/`)
+- Persistent note and document storage in SQLite table `knowledge_snippets`.
+- Porter-stemmed FTS5 virtual table (`knowledge_snippets_fts`) with BM25 relevance ranking.
+- Automatic prompt context injection for semantic matches; `search_knowledge` and `store_knowledge` agent tools.
+- REST endpoints: `POST /api/knowledge/ingest`, `GET /api/knowledge/search`, `GET /api/knowledge/list`, `DELETE /api/knowledge/{id}`.
+
+### 7.2. Model Context Protocol (MCP) Engine (`ai-assistant/server/mcp/`)
+- Stdio JSON-RPC 2.0 client (`MCPProcessClient`) connecting to external MCP servers.
+- `MCPManager` loads `mcp_config.json`, establishes handshakes, translates schemas into `MCPToolAdapter` (`BaseTool`), and registers them in `ToolRegistry`.
+- REST endpoints: `GET /api/mcp/servers`, `POST /api/mcp/reload`.
+
+### 7.3. UI Tool Transparency & Knowledge Management (`ai-assistant/frontend/src/`)
+- In-chat collapsible tool execution cards rendering real-time tool state (`running`, `success`, `failed`), arguments, execution summaries, and verification tags.
+- `KnowledgeManager.jsx` component inside Settings: multi-document drag-and-drop file ingestion (`.txt`, `.md`, `.json`, `.csv`, `.py`), manual note creator with tags, and snippet deletion.
+- Real-time MCP monitor displaying active servers, discovered external tools, and one-click configuration reload.
 
 ## 7. Deployment shape
 

@@ -215,6 +215,7 @@ class AgentOrchestrator:
             full_response = ""
             tool_iterations = 0
             max_tool_iterations = 4
+            trial_contents = list(contents)
 
             try:
                 while tool_iterations < max_tool_iterations:
@@ -228,7 +229,7 @@ class AgentOrchestrator:
 
                     response = await client.aio.models.generate_content(
                         model=model_name,
-                        contents=contents,
+                        contents=trial_contents,
                         config=config
                     )
 
@@ -242,7 +243,7 @@ class AgentOrchestrator:
                     if function_calls:
                         # Model requested tool executions
                         # Append the model's call turn to history
-                        contents.append(response.candidates[0].content)
+                        trial_contents.append(response.candidates[0].content)
 
                         # Execute all function calls
                         response_parts = []
@@ -264,6 +265,7 @@ class AgentOrchestrator:
                                 status_msg = f"Querying {tool_args.get('service', 'API')}..."
 
                             yield f"data: {json.dumps({'type': 'status', 'message': status_msg})}\n\n"
+                            yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name, 'args': tool_args})}\n\n"
 
                             # Execute tool
                             tool_result = await self.tool_registry.execute(tool_name, tool_args)
@@ -275,6 +277,24 @@ class AgentOrchestrator:
                             if not verif.get("verified", True):
                                 tool_output["verification_warning"] = verif.get("reason")
 
+                            # Emit tool outcome event
+                            verif_status = verif.get("verified", True)
+                            summary_text = "Completed"
+                            if "result" in tool_output:
+                                summary_text = str(tool_output["result"])[:120]
+                            elif "results" in tool_output and isinstance(tool_output["results"], list):
+                                summary_text = f"Retrieved {len(tool_output['results'])} items"
+                            elif not tool_result.success:
+                                summary_text = str(tool_output.get("error", "Failed"))[:120]
+
+                            yield f"data: {json.dumps({
+                                'type': 'tool_result',
+                                'tool': tool_name,
+                                'success': tool_result.success,
+                                'verified': verif_status,
+                                'summary': summary_text
+                            })}\n\n"
+
                             response_parts.append(
                                 types.Part.from_function_response(
                                     name=tool_name,
@@ -282,8 +302,8 @@ class AgentOrchestrator:
                                 )
                             )
 
-                        # Append function response turn to contents
-                        contents.append(types.Content(role="tool", parts=response_parts))
+                        # Append function response turn to contents with valid Gemini role: 'user'
+                        trial_contents.append(types.Content(role="user", parts=response_parts))
                         # Loop back so Gemini can formulate response with tool findings
                         continue
 

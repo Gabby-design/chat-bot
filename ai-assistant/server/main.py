@@ -301,6 +301,34 @@ async def delete_knowledge_endpoint(snippet_id: str):
         return {"success": False}
 
 # ============================================================================
+# MODEL CONTEXT PROTOCOL (MCP) ENDPOINTS
+# ============================================================================
+
+@app.get("/api/mcp/servers")
+async def get_mcp_servers():
+    """
+    Get configured and running Model Context Protocol (MCP) servers and tools.
+    """
+    try:
+        return default_mcp_manager.get_server_statuses()
+    except Exception as e:
+        print(f"[MCP Status Error]: {sanitize_error_message(str(e))}")
+        return {"total_servers": 0, "active_servers": 0, "registered_mcp_tools": [], "servers": {}}
+
+@app.post("/api/mcp/reload")
+async def reload_mcp_servers():
+    """
+    Reload mcp_config.json and re-establish MCP server connections.
+    """
+    try:
+        status = await default_mcp_manager.reload()
+        return {"success": True, "status": status}
+    except Exception as e:
+        safe_err = sanitize_error_message(str(e))
+        print(f"[MCP Reload Error]: {safe_err}")
+        return {"success": False, "error": safe_err}
+
+# ============================================================================
 # MULTI-TIER NEURAL TEXT-TO-SPEECH (TTS)
 # ============================================================================
 

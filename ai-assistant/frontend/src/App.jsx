@@ -1,6 +1,6 @@
 // src/App.jsx
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, RotateCw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff, Download, Brain, Globe, Maximize2, ExternalLink, MapPin } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Menu, Plus, MessageSquare, Settings, LogOut, Copy, RotateCcw, RotateCw, Square, Trash2, X, Code, Calculator, Search, FileText, ChevronRight, Zap, ChevronDown, Star, Bookmark, Folder, Gem, HelpCircle, Moon, Bell, Shield, Info, ThumbsUp, ThumbsDown, Volume2, VolumeX, Pencil, Check, Mic, MicOff, Download, Brain, Globe, Maximize2, ExternalLink, MapPin, Wrench, Database } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import toast, { Toaster } from 'react-hot-toast';
@@ -8,6 +8,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react';
 import VoiceModeModal from './components/VoiceModeModal.jsx';
 import LocationPrimingModal from './components/LocationPrimingModal.jsx';
 import WeatherChip from './components/WeatherChip.jsx';
+import KnowledgeManager from './components/KnowledgeManager.jsx';
 import { TableBlock, CodeBlock, GeminiSparkle } from './components/MarkdownBlocks.jsx';
 import {
   getLocationPermissionStatus,
@@ -133,7 +134,8 @@ async function streamGeminiDirect({
   onToken,
   onChatId,
   onResetBuffer,
-  onStatus = null
+  onStatus = null,
+  onToolEvent = null
 }) {
   const res = await fetch(`${API_BASE_URL}/api/chat/stream`, {
     method: 'POST',
@@ -199,6 +201,12 @@ async function streamGeminiDirect({
       if (parsed?.type === 'status' && parsed?.message) {
         if (onStatus) {
           onStatus(parsed.message);
+        }
+      }
+
+      if (parsed?.type === 'tool_call' || parsed?.type === 'tool_result') {
+        if (onToolEvent) {
+          onToolEvent(parsed);
         }
       }
 
@@ -340,6 +348,7 @@ function App() {
   const [isThinkingLive, setIsThinkingLive] = useState(false);
   const [thinkingSeconds, setThinkingSeconds] = useState(0);
   const [expandedThoughts, setExpandedThoughts] = useState(new Set());
+  const [expandedTools, setExpandedTools] = useState(new Set());
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const chatContainerRef = useRef(null);
   const textareaRef = useRef(null);
@@ -487,6 +496,15 @@ function App() {
 
   const toggleThoughtExpanded = (msgIndex) => {
     setExpandedThoughts((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgIndex)) next.delete(msgIndex);
+      else next.add(msgIndex);
+      return next;
+    });
+  };
+
+  const toggleToolsExpanded = (msgIndex) => {
+    setExpandedTools((prev) => {
       const next = new Set(prev);
       if (next.has(msgIndex)) next.delete(msgIndex);
       else next.add(msgIndex);
@@ -1273,6 +1291,59 @@ function App() {
                 ...updated[lastIdx],
                 statusMessage: statusMsg
               };
+            }
+            return updated;
+          });
+        },
+        onToolEvent: (event) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            if (updated.length > 0) {
+              const lastIdx = updated.length - 1;
+              const currentTools = updated[lastIdx].toolCalls ? [...updated[lastIdx].toolCalls] : [];
+              if (event.type === 'tool_call') {
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  toolCalls: [
+                    ...currentTools,
+                    {
+                      tool: event.tool,
+                      args: event.args,
+                      status: 'running',
+                      summary: null,
+                      timestamp: Date.now()
+                    }
+                  ]
+                };
+              } else if (event.type === 'tool_result') {
+                let targetIdx = -1;
+                for (let i = currentTools.length - 1; i >= 0; i--) {
+                  if (currentTools[i].tool === event.tool) {
+                    targetIdx = i;
+                    break;
+                  }
+                }
+                if (targetIdx !== -1) {
+                  currentTools[targetIdx] = {
+                    ...currentTools[targetIdx],
+                    status: event.success ? 'success' : 'failed',
+                    verified: event.verified,
+                    summary: event.summary
+                  };
+                } else {
+                  currentTools.push({
+                    tool: event.tool,
+                    status: event.success ? 'success' : 'failed',
+                    verified: event.verified,
+                    summary: event.summary,
+                    timestamp: Date.now()
+                  });
+                }
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  toolCalls: currentTools
+                };
+              }
             }
             return updated;
           });
@@ -2415,6 +2486,62 @@ function App() {
                         </div>
                       )}
 
+                      {/* Collapsible Tool Executions Block */}
+                      {msg.toolCalls && msg.toolCalls.length > 0 && (
+                        <div className="mb-2.5 rounded-xl bg-[#1c1c1e]/50 border border-white/10 overflow-hidden text-[10px] sm:text-xs">
+                          <button
+                            type="button"
+                            onClick={() => toggleToolsExpanded(index)}
+                            className="w-full flex items-center justify-between px-2.5 py-1.5 text-[#8a8a8e] hover:text-[#e8e8e8] hover:bg-white/[0.03] transition-colors cursor-pointer text-left"
+                          >
+                            <div className="flex items-center gap-1.5 font-medium text-[10px] sm:text-xs">
+                              <Wrench size={13} className="text-[#a8c7fa]" />
+                              <span>
+                                Used {msg.toolCalls.length} {msg.toolCalls.length === 1 ? 'tool' : 'tools'} (
+                                {Array.from(new Set(msg.toolCalls.map((t) => t.tool.replace(/_/g, ' ')))).join(', ')}
+                                )
+                              </span>
+                            </div>
+                            {expandedTools.has(index) ? (
+                              <ChevronDown size={14} />
+                            ) : (
+                              <ChevronRight size={14} />
+                            )}
+                          </button>
+                          {expandedTools.has(index) && (
+                            <div className="px-2.5 pb-2.5 pt-1 border-t border-white/5 space-y-1.5">
+                              {msg.toolCalls.map((call, cIdx) => (
+                                <div key={cIdx} className="bg-black/30 rounded-lg p-2 border border-white/5 text-[11px] font-mono">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="font-semibold text-[#a8c7fa] flex items-center gap-1">
+                                      <Zap size={11} className="text-[#a8c7fa]" />
+                                      <span>{call.tool}</span>
+                                    </span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold tracking-wider ${
+                                      call.status === 'running' ? 'bg-amber-500/20 text-amber-300 animate-pulse' :
+                                      call.status === 'success' ? 'bg-emerald-500/20 text-emerald-300' :
+                                      'bg-rose-500/20 text-rose-300'
+                                    }`}>
+                                      {call.status}
+                                    </span>
+                                  </div>
+                                  {call.args && Object.keys(call.args).length > 0 && (
+                                    <div className="text-[#8a8a8e] text-[10px] truncate mb-1">
+                                      args: {JSON.stringify(call.args)}
+                                    </div>
+                                  )}
+                                  {call.summary && (
+                                    <div className="text-[#c4c7c5] text-[10.5px] bg-white/[0.03] rounded px-1.5 py-1 border border-white/5">
+                                      {call.summary}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Final Answer Prose Content - 100% full width, flush! */}
                       <div className="prose-chat text-[#e8e8e8] leading-relaxed w-full">
                         {msg.content ? (
@@ -3112,6 +3239,17 @@ function App() {
                       </button>
                     )}
                   </div>
+                </div>
+              </div>
+
+              {/* Semantic Knowledge Store & MCP Section */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                  <Database size={16} />
+                  Knowledge & Agent Tools
+                </h3>
+                <div className="p-3 rounded-lg bg-white/5 space-y-3">
+                  <KnowledgeManager apiBaseUrl={API_BASE_URL} />
                 </div>
               </div>
 

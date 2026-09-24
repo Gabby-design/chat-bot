@@ -124,7 +124,15 @@ async def test_tools():
     assert search_res.data["count"] > 0, "search_knowledge returned no results"
     print("  -> Passed: Knowledge tools operate seamlessly via default_tool_registry.")
 
-    print("\nALL 9 AGENT CORE, ORCHESTRATOR & RAG TEST SUITES PASSED CLEANLY!")
+    print("[TEST 10] Testing Model Context Protocol (MCP) Manager...")
+    from mcp import default_mcp_manager, MCPManager
+    assert default_mcp_manager is not None, "default_mcp_manager missing"
+    statuses = default_mcp_manager.get_server_statuses()
+    assert "total_servers" in statuses, "get_server_statuses missing total_servers"
+    assert "servers" in statuses, "get_server_statuses missing servers"
+    print("  -> Passed: MCP Manager cleanly loads configuration and manages server statuses.")
+
+    print("\nALL 10 AGENT CORE, ORCHESTRATOR, RAG & MCP TEST SUITES PASSED CLEANLY!")
 
 if __name__ == "__main__":
     asyncio.run(test_tools())

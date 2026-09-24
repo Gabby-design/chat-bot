@@ -112,24 +112,48 @@ SPOKEN VOICE DELIVERY RULES:
 
   const systemInstructionText = customSystemInstruction || (mode === 'voice' ? voiceSystemPrompt : baseIntelligence);
 
-  let primaryModel = 'gemini-3.6-flash';
-  let fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'];
+  let primaryModel = 'gemini-3.8-flash';
+  let fallbackModels = [
+    'gemini-3.6-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.7-flash',
+    'gemini-3.5-flash'
+  ];
   let generationConfig = undefined;
 
   if (mode === 'voice') {
-    primaryModel = 'gemini-3.6-flash';
-    fallbackModels = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-2.5-flash'];
+    primaryModel = 'gemini-3.8-flash';
+    fallbackModels = [
+      'gemini-3.6-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-3.7-flash'
+    ];
     generationConfig = {
       temperature: 0.5,
       topP: 0.9,
       maxOutputTokens: 2048
     };
   } else if (model === 'advanced') {
-    primaryModel = 'gemini-2.5-pro';
-    fallbackModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
+    primaryModel = 'gemini-3.8-flash';
+    fallbackModels = [
+      'gemini-3.6-flash',
+      'gemini-3.1-pro-preview',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-3.7-flash'
+    ];
   } else if (model === 'fast' || model === 'lite') {
     primaryModel = 'gemini-3.5-flash-lite';
-    fallbackModels = ['gemini-3.6-flash', 'gemini-2.5-flash-lite'];
+    fallbackModels = [
+      'gemini-3.1-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-3.8-flash',
+      'gemini-3.6-flash'
+    ];
   } else if (typeof model === 'string' && model.startsWith('gemini-')) {
     primaryModel = model;
   }
@@ -234,6 +258,8 @@ ${finalPrompt}`;
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
+  let lastErrorDetail = null;
+
   for (const m of modelsToTry) {
     let tokensEmitted = false;
     try {
@@ -249,6 +275,16 @@ ${finalPrompt}`;
       });
 
       if (!upstream.ok) {
+        let errText = '';
+        try {
+          errText = await upstream.text();
+        } catch (_) {}
+        console.warn(`Model ${m} failed (HTTP ${upstream.status}):`, errText.slice(0, 160));
+        lastErrorDetail = `HTTP ${upstream.status}: ${errText.slice(0, 160)}`;
+        if (upstream.status === 503 || upstream.status === 429) {
+          // Brief pause on temporary spike / rate-limit before trying fallback model
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
         continue;
       }
 
@@ -280,6 +316,7 @@ ${finalPrompt}`;
       return res.end();
     } catch (err) {
       console.warn(`Model ${m} stream attempt notice:`, err.message);
+      lastErrorDetail = err.message;
       if (tokensEmitted) {
         res.write(`data: ${JSON.stringify({ type: 'reset_buffer' })}\n\n`);
         tokensEmitted = false;
@@ -287,6 +324,11 @@ ${finalPrompt}`;
     }
   }
 
-  res.write(`data: ${JSON.stringify({ error: 'Service temporarily busy. Please try again shortly.' })}\n\n`);
+  const isHighDemand = lastErrorDetail && (lastErrorDetail.includes('503') || lastErrorDetail.includes('high demand') || lastErrorDetail.includes('UNAVAILABLE'));
+  const userErrorMsg = isHighDemand
+    ? 'Google Gemini is temporarily experiencing high demand. Please try again shortly or click Regenerate.'
+    : 'Google Gemini service is temporarily busy. Please try again in a few moments.';
+
+  res.write(`data: ${JSON.stringify({ error: userErrorMsg })}\n\n`);
   return res.end();
 }

@@ -576,12 +576,17 @@ function App() {
 
   const handleInstallApp = async () => {
     if (installPrompt) {
-      installPrompt.prompt();
-      const { outcome } = await installPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setIsAppInstalled(true);
+      try {
+        await installPrompt.prompt();
+        const choice = await installPrompt.userChoice;
+        if (choice && choice.outcome === 'accepted') {
+          setIsAppInstalled(true);
+        }
+      } catch (err) {
+        console.warn('Install prompt error:', err);
+      } finally {
+        setInstallPrompt(null);
       }
-      setInstallPrompt(null);
     } else {
       toast(
         (t) => (
@@ -1373,9 +1378,11 @@ function App() {
         displayError.includes('503') ||
         displayError.includes('high demand') ||
         displayError.includes('UNAVAILABLE') ||
-        displayError.includes('Service Unavailable')
+        displayError.includes('Service Unavailable') ||
+        displayError.includes('temporarily busy') ||
+        displayError.includes('temporarily experiencing')
       ) {
-        displayError = 'Google Gemini is temporarily experiencing high demand (503 Service Unavailable). Please try again in a few moments or click Regenerate.';
+        displayError = 'Google Gemini is temporarily experiencing high demand. Please try again shortly or click Regenerate.';
       }
       setMessages((prev) => {
         const newMsgs = [...prev];
@@ -1535,7 +1542,7 @@ function App() {
             message: spokenText,
             chat_id: activeChatId || undefined,
             mode: 'voice',
-            model: 'gemini-3.6-flash',
+            model: 'gemini-3.8-flash',
             conversationHistory: priorHistory,
             locationContext: locSummary,
             interruptedText: interruptedText || undefined,
@@ -1554,7 +1561,7 @@ function App() {
           interruptedText: interruptedText || undefined,
           alreadySpokenText: alreadySpokenText || undefined,
           conversationHistory: priorHistory,
-          modelSelection: 'gemini-3.6-flash',
+          modelSelection: 'gemini-3.8-flash',
           mode: 'voice',
           activeGem,
           locationContext: locSummary,

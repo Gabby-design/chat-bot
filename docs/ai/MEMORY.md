@@ -7,10 +7,9 @@
 - Completed Phase 2: Orchestrator package exports & /api/agent/task planning endpoint.
 - Completed Phase 3: RAG KnowledgeStore with SQLite FTS5, BM25 ranking, search_knowledge & store_knowledge tools, and knowledge management endpoints.
 - Completed Phase 4: Model Context Protocol (MCP) engine (stdio JSON-RPC client, MCPManager, mcp_config.json, /api/mcp/servers, and /api/mcp/reload).
-- Fixed conversation history resurrection bug: added atomic `DELETE /api/chats` endpoint and synchronized ground-truth cache purge across backend, React state, and browser localStorage.
-- All 10 automated test suites in `test_agent_suite.py` passing cleanly.
-- Frontend and backend daemons active and listening on ports 3000 and 8000.
-- Zero git commits or pushes made. Ready for owner testing.
+- Fixed Google Gemini model resilience: eliminated deprecated 404/503 models, configured robust fallback chain with Gemini 3.8 Flash, 3.6 Flash, 3.5 Flash Lite, and 3.1 Flash Lite.
+- Fixed PWA beforeinstallprompt lifecycle handling and user-facing high-demand error parsing in App.jsx.
+- All 10 automated test suites passing cleanly; frontend builds with 0 errors.
 
 ## Fixed Decisions
 

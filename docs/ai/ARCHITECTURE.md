@@ -38,7 +38,7 @@ last_reviewed: "2026-09-22"
 
 ## 5. Integrations
 
-- LLM: Google Gemini via `google-genai` SDK (`gemini-3.6-flash`, fallbacks: `gemini-3.5-flash`, `gemini-3.7-flash`, `gemini-2.5-flash`, `gemini-2.5-pro`).
+- LLM: Google Gemini via `google-genai` SDK (`gemini-3.8-flash`, fallbacks: `gemini-3.6-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-flash-lite-latest`, `gemini-3.7-flash`).
 - Speech: Edge Neural TTS via `edge_tts` (Ana, Aria, Guy, Christopher, Eric).
 - Search: Wikipedia REST API + DuckDuckGo Instant Answers + optional Tavily/Serper.
 - Weather: Open-Meteo Geocoding and Forecast API.

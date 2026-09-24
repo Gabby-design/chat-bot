@@ -30,10 +30,10 @@ logger = logging.getLogger("gabby.orchestrator")
 
 # Model routing fallbacks
 MODEL_FALLBACKS = {
-    "voice": ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash", "gemini-2.5-flash"],
-    "advanced": ["gemini-2.5-pro", "gemini-3.7-flash", "gemini-3.6-flash"],
-    "fast": ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash-lite"],
-    "standard": ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash", "gemini-2.5-flash"]
+    "voice": ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.7-flash"],
+    "advanced": ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.1-pro-preview", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.7-flash"],
+    "fast": ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.8-flash", "gemini-3.6-flash"],
+    "standard": ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.7-flash", "gemini-3.5-flash"]
 }
 
 class AgentOrchestrator:
@@ -52,7 +52,7 @@ class AgentOrchestrator:
         return self._cached_client
 
     def _build_model_chain(self, mode: str, model_selection: Optional[str]) -> List[str]:
-        configured_model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        configured_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
         if mode == "voice":
             chain = MODEL_FALLBACKS["voice"].copy()
         elif model_selection == "advanced":

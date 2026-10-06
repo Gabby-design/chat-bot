@@ -53,13 +53,17 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const body = req.body || {};
-      lat = body.lat != null ? parseFloat(body.lat) : null;
-      lon = body.lon != null ? parseFloat(body.lon) : null;
+      const rawLat = body.lat != null ? body.lat : body.latitude;
+      const rawLon = body.lon != null ? body.lon : (body.longitude != null ? body.longitude : body.lng);
+      lat = rawLat != null ? parseFloat(rawLat) : null;
+      lon = rawLon != null ? parseFloat(rawLon) : null;
       cityName = typeof body.city === 'string' ? body.city.trim() : null;
     } else {
       const query = req.query || {};
-      lat = query.lat != null ? parseFloat(query.lat) : null;
-      lon = query.lon != null ? parseFloat(query.lon) : null;
+      const rawLat = query.lat != null ? query.lat : query.latitude;
+      const rawLon = query.lon != null ? query.lon : (query.longitude != null ? query.longitude : query.lng);
+      lat = rawLat != null ? parseFloat(rawLat) : null;
+      lon = rawLon != null ? parseFloat(rawLon) : null;
       cityName = typeof query.city === 'string' ? query.city.trim() : null;
     }
 

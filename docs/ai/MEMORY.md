@@ -8,10 +8,8 @@
 - Completed Phase 3: RAG KnowledgeStore with SQLite FTS5, BM25 ranking, search_knowledge & store_knowledge tools, and knowledge management endpoints.
 - Completed Phase 4: Model Context Protocol (MCP) engine (stdio JSON-RPC client, MCPManager, mcp_config.json, /api/mcp/servers, and /api/mcp/reload).
 - Fixed Google Gemini model resilience: eliminated deprecated 404/503 models, configured robust fallback chain with Gemini 3.8 Flash, 3.6 Flash, 3.5 Flash Lite, and 3.1 Flash Lite.
-- Fixed stream error opacity: parse raw upstream Google API error JSON (400 Invalid Key, 403 Permission Denied, 429 Quota Exceeded, 503 High Demand) instead of masking behind generic service busy messages.
-- Fixed Gemini upstream authentication: added dual-auth header (x-goog-api-key) and query-param fallback supporting modern Google AI Studio keys (AQ. and AIza), OAuth access token (ya29.) detection, Bearer prefix sanitization, and explicit 401 unauthenticated diagnostic reporting.
-- Enforced public chatbot architecture: zero user-provided credentials, zero client-side API key inputs, server-owned GEMINI_API_KEY exclusively, sliding window IP rate limiting, input size validation, and safe error masking.
-- Resolved PWA console warning by removing e.preventDefault() on beforeinstallprompt so browser banner renders cleanly.
+- Fixed Gemini upstream authentication & environment variable resilience: multi-name key resolution (GEMINI_API_KEY, GOOGLE_API_KEY, GEMINI_KEY, API_KEY), automatic stripping of accidental key name prefixes (e.g., apikey=), and direct unmasked diagnostic reporting for 401/403/configuration errors instead of deceptive maintenance masking.
+- Enforced public chatbot architecture: zero user-provided credentials, zero client-side API key inputs, server-owned keys exclusively, sliding window IP rate limiting, input size validation.
 - All 10 automated test suites passing cleanly; frontend builds with 0 errors.
 
 ## Fixed Decisions

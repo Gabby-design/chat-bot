@@ -45,15 +45,21 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const rawKey = process.env.GEMINI_API_KEY || '';
+  const rawKey = process.env.GEMINI_API_KEY ||
+                 process.env.GOOGLE_API_KEY ||
+                 process.env.GEMINI_KEY ||
+                 process.env.API_KEY ||
+                 process.env.apikey ||
+                 '';
   let GEMINI_API_KEY = typeof rawKey === 'string' ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
+  GEMINI_API_KEY = GEMINI_API_KEY.replace(/^(?:gemini_api_key|google_api_key|api_key|apikey)\s*=\s*/i, '').trim();
   if (GEMINI_API_KEY.toLowerCase().startsWith('bearer ')) {
     GEMINI_API_KEY = GEMINI_API_KEY.slice(7).trim();
   }
 
   if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
     console.error('[Server Error] GEMINI_API_KEY is not configured on the server runtime.');
-    return res.status(503).json({ error: 'Speech synthesis is temporarily unavailable.' });
+    return res.status(503).json({ error: 'Server configuration error: GEMINI_API_KEY environment variable is not configured in Vercel.' });
   }
 
   const { text, voice = 'Aoede' } = req.body || {};

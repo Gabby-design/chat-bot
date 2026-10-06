@@ -1395,13 +1395,6 @@ function App() {
         displayError.includes('Quota Exceeded')
       ) {
         displayError = 'Gabby is receiving high volume right now. Please wait a moment and try again.';
-      } else if (
-        displayError.includes('401') ||
-        displayError.includes('403') ||
-        displayError.includes('maintenance') ||
-        displayError.includes('Unauthenticated')
-      ) {
-        displayError = 'Gabby AI service is temporarily undergoing maintenance. Please try again shortly.';
       }
       setMessages((prev) => {
         const newMsgs = [...prev];

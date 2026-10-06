@@ -41,7 +41,8 @@ def init_db():
         columns = [col[1] for col in cursor.fetchall()]
         if "updated_at" not in columns:
             try:
-                cursor.execute("ALTER TABLE chats ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+                cursor.execute("ALTER TABLE chats ADD COLUMN updated_at TIMESTAMP;")
+                cursor.execute("UPDATE chats SET updated_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL;")
             except Exception:
                 pass
         

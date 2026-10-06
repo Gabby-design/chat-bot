@@ -32,6 +32,9 @@ if sys.platform == "win32":
         pass
 
 # Load environment
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(_env_path):
+    load_dotenv(_env_path, override=True)
 load_dotenv(override=True)
 
 # Initialize Database
@@ -578,6 +581,8 @@ async def weather_endpoint(
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest):
     try:
+        if os.path.exists(_env_path):
+            load_dotenv(_env_path, override=True)
         load_dotenv(override=True)
         current_api_key = os.getenv("GEMINI_API_KEY")
         if not current_api_key:

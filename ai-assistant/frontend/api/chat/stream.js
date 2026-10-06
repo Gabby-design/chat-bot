@@ -54,8 +54,14 @@ export default async function handler(req, res) {
   }
 
   // Credentials are owned by the application owner on the server runtime only
-  const rawKey = process.env.GEMINI_API_KEY || '';
+  const rawKey = process.env.GEMINI_API_KEY ||
+                 process.env.GOOGLE_API_KEY ||
+                 process.env.GEMINI_KEY ||
+                 process.env.API_KEY ||
+                 process.env.apikey ||
+                 '';
   let apiKey = typeof rawKey === 'string' ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
+  apiKey = apiKey.replace(/^(?:gemini_api_key|google_api_key|api_key|apikey)\s*=\s*/i, '').trim();
   if (apiKey.toLowerCase().startsWith('bearer ')) {
     apiKey = apiKey.slice(7).trim();
   }
@@ -65,7 +71,7 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.write(`data: ${JSON.stringify({ error: 'Gabby AI is currently undergoing brief maintenance. Please try again in a few moments.' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ error: 'Server configuration error: GEMINI_API_KEY environment variable is not configured in Vercel.' })}\n\n`);
     res.write('data: [DONE]\n\n');
     return res.end();
   }
@@ -406,13 +412,13 @@ ${finalPrompt}`;
     console.error(`[Upstream Gemini Error ${status} ${code}]:`, message);
 
     if (status === 401 || status === 403) {
-      userErrorMsg = 'Gabby AI service is temporarily undergoing brief maintenance. Please try again in a few moments.';
+      userErrorMsg = `Google Gemini Authentication Error (${status}): ${message || 'Invalid API key or unauthorized access'}`;
     } else if (status === 429) {
-      userErrorMsg = 'Gabby is receiving high volume right now. Please wait a moment and retry.';
+      userErrorMsg = `Google Gemini Rate Limit Exceeded (429): ${message || 'Please wait a moment and retry'}`;
     } else if (status === 503 || lower.includes('high demand') || lower.includes('unavailable')) {
       userErrorMsg = 'Google Gemini is temporarily experiencing high demand. Please try again shortly or click Regenerate.';
     } else {
-      userErrorMsg = 'Gabby was unable to complete the response. Please try again in a few moments.';
+      userErrorMsg = `Google Gemini Error (${status}): ${message || 'Unable to complete response'}`;
     }
   }
 

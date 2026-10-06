@@ -1,4 +1,4 @@
-// ai-assistant/frontend/api/search.js
+// api/search.js
 // Serverless search proxy supporting Tavily, Serper, and fallback web search
 
 export default async function handler(req, res) {
@@ -87,6 +87,7 @@ export default async function handler(req, res) {
       const html = await ddgRes.text();
       const results = [];
       const snippetRegex = /class="result__snippet[^>]*>([\s\S]*?)<\/(?:a|div)>/g;
+      const titleRegex = /<a class="result__url[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
 
       let match;
       while ((match = snippetRegex.exec(html)) !== null && results.length < 5) {
@@ -112,7 +113,12 @@ export default async function handler(req, res) {
     const wikiRes = await fetch(
       `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
         cleanQuery
-      )}&format=json&origin=*&srlimit=4`
+      )}&format=json&origin=*&srlimit=4`,
+      {
+        headers: {
+          'User-Agent': 'GabbyBot/1.0 (https://gabby-ai-appgabby-v2.vercel.app; support@gabby.ai)'
+        }
+      }
     );
     if (wikiRes.ok) {
       const wikiData = await wikiRes.json();

@@ -113,7 +113,12 @@ export default async function handler(req, res) {
     const wikiRes = await fetch(
       `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
         cleanQuery
-      )}&format=json&origin=*&srlimit=4`
+      )}&format=json&origin=*&srlimit=4`,
+      {
+        headers: {
+          'User-Agent': 'GabbyBot/1.0 (https://gabby-ai-appgabby-v2.vercel.app; support@gabby.ai)'
+        }
+      }
     );
     if (wikiRes.ok) {
       const wikiData = await wikiRes.json();

@@ -1282,36 +1282,45 @@ export default function VoiceModeModal({
             title="Tap orb to talk or interrupt"
             aria-label="Tap orb to talk or interrupt"
           >
+            <div className="voice-orb-aura" />
             <div className="voice-orb" />
           </button>
 
           {/* Live Status Hint for Mobile & Desktop */}
-          <div className="mt-2 text-center select-none">
-            {voiceState === 'speaking' ? (
-              <span className="text-xs font-medium text-[#E275AA] animate-pulse">
-                Gabby is speaking • Say &ldquo;Wait&rdquo; or tap to interrupt
-              </span>
-            ) : wasInterruptedRef.current && voiceState === 'listening' ? (
-              <span className="text-xs font-medium text-amber-300 animate-pulse">
-                Interrupted • Listening to you...
-              </span>
-            ) : voiceState === 'processing' ? (
-              <span className="text-xs font-medium text-purple-300 animate-pulse">
-                Thinking...
-              </span>
-            ) : voiceState === 'muted' ? (
-              <span className="text-xs font-medium text-rose-400">
-                Microphone muted • Tap mic below to speak
-              </span>
-            ) : voiceState === 'idle' ? (
-              <span className="text-xs font-medium text-slate-400">
-                Ready • Tap orb to speak
-              </span>
-            ) : (
-              <span className="text-xs font-medium text-[#70CFFF]">
-                {transcript ? 'Listening...' : isMobile ? 'Listening • Tap orb to speak' : 'Listening... speak anytime'}
-              </span>
-            )}
+          <div className="mt-2.5 text-center select-none">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/10 shadow-lg transition-all">
+              {voiceState === 'speaking' ? (
+                <span className="text-[11.5px] font-medium text-[#f472b6] flex items-center gap-1.5 animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#f472b6]" />
+                  Gabby is speaking • Say &ldquo;Wait&rdquo; or tap to interrupt
+                </span>
+              ) : wasInterruptedRef.current && voiceState === 'listening' ? (
+                <span className="text-[11.5px] font-medium text-amber-300 flex items-center gap-1.5 animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  Interrupted • Listening to you...
+                </span>
+              ) : voiceState === 'processing' ? (
+                <span className="text-[11.5px] font-medium text-purple-300 flex items-center gap-1.5 animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                  Thinking...
+                </span>
+              ) : voiceState === 'muted' ? (
+                <span className="text-[11.5px] font-medium text-rose-400 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                  Microphone muted • Tap mic below to speak
+                </span>
+              ) : voiceState === 'idle' ? (
+                <span className="text-[11.5px] font-medium text-slate-400 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                  Ready • Tap orb to speak
+                </span>
+              ) : (
+                <span className="text-[11.5px] font-medium text-[#70CFFF] flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#70CFFF] animate-ping" />
+                  {transcript ? 'Listening...' : isMobile ? 'Listening • Tap orb to speak' : 'Listening... speak anytime'}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1334,7 +1343,7 @@ export default function VoiceModeModal({
           <div className="flex items-center gap-1 sm:gap-1.5 bg-[#1e1f20]/90 backdrop-blur-lg border border-white/10 px-2 py-1 rounded-full">
             <div className="px-2.5 py-1 rounded-full text-xs font-medium text-[#70CFFF] flex items-center gap-1">
               <Volume2 className="icon-sm" />
-              <span className="text-[11px]">Gemini 2.5 • {selectedVoice}</span>
+              <span className="text-[11px]">Gemini 3.8 Voice • {selectedVoice}</span>
             </div>
 
             <button

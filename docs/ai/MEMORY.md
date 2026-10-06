@@ -11,6 +11,7 @@
 - Fixed Gemini upstream authentication & environment variable resilience: multi-name key resolution (GEMINI_API_KEY, GOOGLE_API_KEY, GEMINI_KEY, API_KEY), automatic stripping of accidental key name prefixes (e.g., apikey=), direct unmasked diagnostic reporting for 401/403/configuration errors, restored ApiKeyModal fallback for resilient client keys, and automatic multi-candidate key failover loop (`candidateLoop`) in serverless `/api/chat/stream` and `/api/tts` endpoints.
 - Fixed SQLite schema migration in `database.py`: replaced invalid `ALTER TABLE ... DEFAULT CURRENT_TIMESTAMP` with valid SQLite syntax and backfill, resolving `OperationalError: no such column: updated_at`.
 - Fixed `main.py` dotenv loading: resolved `.env` path via `__file__` so `server/.env` is reliably discovered across working directories.
+- Upgraded Spoken Voice Mode: integrated Gemini Live oral fluency prompt (bite-sized turns, contractions, symbol expansion, zero markdown, empathetic reactive openings) across serverless and orchestrator runtimes; redesigned Voice Orb with fluid multi-layered plasma aura, organic floating physics, and frosted glass status indicators.
 - All 10 automated test suites and end-to-end workflow suite passing cleanly; frontend builds with 0 errors.
 
 ## Fixed Decisions

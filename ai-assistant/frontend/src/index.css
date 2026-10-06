@@ -958,28 +958,43 @@ button:focus-visible {
   border-radius: 50%;
 }
 
-/* ChatGPT-Style Fluid Living Voice Orb with Multi-State Smooth Transitions */
+/* Gemini Live / Siri-Style Fluid Living Voice Orb with Multi-Layered Plasma Glow */
 .voice-orb-container {
   position: relative;
-  width: 140px;
-  height: 140px;
+  width: 150px;
+  height: 150px;
   display: flex;
   align-items: center;
   justify-content: center;
   --level: 0;
-  transform: scale(calc(1 + var(--level, 0) * 0.32)) translateZ(0);
+  transform: scale(calc(1 + var(--level, 0) * 0.35)) translateZ(0);
   transition: transform 0.12s ease-out, filter 0.25s ease-out;
   will-change: transform, filter;
+  animation: orb-float 6s ease-in-out infinite;
 }
 
-/* Base Orb */
+/* Outer Radiant Aura Ring */
+.voice-orb-aura {
+  position: absolute;
+  inset: -18px;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(20px);
+  opacity: 0.45;
+  transition: opacity 0.4s ease, background 0.4s ease, transform 0.4s ease;
+  transform: scale(calc(1 + var(--level, 0) * 0.25));
+  will-change: transform, opacity;
+}
+
+/* Base Orb Core */
 .voice-orb {
   position: relative;
-  width: 120px;
-  height: 120px;
+  width: 126px;
+  height: 126px;
   border-radius: 50%;
-  filter: blur(1.5px);
+  filter: blur(1px);
   transform: translateZ(0);
+  box-shadow: inset 0 0 28px rgba(255, 255, 255, 0.25), 0 0 40px rgba(0, 0, 0, 0.6);
   transition: background 0.45s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.45s cubic-bezier(0.4, 0, 0.2, 1);
   will-change: transform, background, box-shadow;
 }
@@ -988,21 +1003,24 @@ button:focus-visible {
 .voice-orb::after {
   content: '';
   position: absolute;
-  inset: -12%;
+  inset: -14%;
   border-radius: 50%;
-  filter: blur(14px);
+  filter: blur(16px);
   transform: translateZ(0);
   transition: background 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1);
   will-change: transform, background;
 }
 
-/* 1. IDLE STATE: Calm, subtle resting glow */
+/* 1. IDLE STATE: Calm, subtle resting lunar glow */
 .voice-orb-container.state-idle {
-  filter: brightness(1) drop-shadow(0 0 20px rgba(148, 163, 184, 0.35));
+  filter: brightness(1) drop-shadow(0 0 24px rgba(148, 163, 184, 0.35));
+}
+.voice-orb-container.state-idle .voice-orb-aura {
+  background: radial-gradient(circle, rgba(148, 163, 184, 0.3), transparent 70%);
 }
 .voice-orb-container.state-idle .voice-orb {
-  background: radial-gradient(circle at 35% 35%, #94a3b8, #475569 45%, #1e293b 100%);
-  animation: orb-breathe 4s ease-in-out infinite;
+  background: radial-gradient(circle at 35% 35%, #cbd5e1, #64748b 45%, #1e293b 100%);
+  animation: orb-breathe 4.5s ease-in-out infinite;
 }
 .voice-orb-container.state-idle .voice-orb::before,
 .voice-orb-container.state-idle .voice-orb::after {
@@ -1011,75 +1029,103 @@ button:focus-visible {
   opacity: 0.5;
 }
 
-/* 2. LISTENING STATE: Dynamic reactive electric cyan/blue glow with mic audio reactivity */
+/* 2. LISTENING STATE: Dynamic reactive electric cyan and sapphire glow */
 .voice-orb-container.state-listening {
-  filter: brightness(calc(1 + var(--level, 0) * 0.55)) drop-shadow(0 0 calc(20px + var(--level, 0) * 50px) rgba(56, 189, 248, calc(0.45 + var(--level, 0) * 0.55)));
+  filter: brightness(calc(1 + var(--level, 0) * 0.55)) drop-shadow(0 0 calc(24px + var(--level, 0) * 60px) rgba(56, 189, 248, calc(0.5 + var(--level, 0) * 0.55)));
+}
+.voice-orb-container.state-listening .voice-orb-aura {
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.55), rgba(37, 99, 235, 0.25) 50%, transparent 75%);
+  opacity: calc(0.6 + var(--level, 0) * 0.4);
 }
 .voice-orb-container.state-listening .voice-orb {
-  background: radial-gradient(circle at 30% 30%, #7dd3fc, #38bdf8 40%, #2563eb 75%, #1e3a8a 100%);
-  animation: orb-breathe 2.5s ease-in-out infinite;
+  background: radial-gradient(circle at 30% 30%, #bae6fd, #38bdf8 38%, #2563eb 72%, #0f172a 100%);
+  box-shadow: inset 0 0 35px rgba(255, 255, 255, 0.4), 0 0 50px rgba(56, 189, 248, 0.4);
+  animation: orb-breathe 2.4s ease-in-out infinite;
 }
 .voice-orb-container.state-listening .voice-orb::before,
 .voice-orb-container.state-listening .voice-orb::after {
-  background: radial-gradient(circle, rgba(125, 211, 252, 0.65), transparent 60%);
-  animation: orb-swirl 6s linear infinite;
+  background: radial-gradient(circle, rgba(125, 211, 252, 0.7), transparent 60%);
+  animation: orb-swirl 5.5s linear infinite;
 }
 .voice-orb-container.state-listening .voice-orb::after {
   animation-direction: reverse;
-  animation-duration: 8s;
-  opacity: 0.7;
+  animation-duration: 7.5s;
+  opacity: 0.75;
 }
 
-/* 3. PROCESSING STATE: Swirling mystical purple/violet thought state */
+/* 3. PROCESSING STATE: Swirling mystical cosmic purple and amethyst thought state */
 .voice-orb-container.state-processing {
-  filter: brightness(1.2) drop-shadow(0 0 35px rgba(192, 132, 252, 0.6));
+  filter: brightness(1.25) drop-shadow(0 0 40px rgba(192, 132, 252, 0.65));
+}
+.voice-orb-container.state-processing .voice-orb-aura {
+  background: radial-gradient(circle, rgba(192, 132, 252, 0.6), rgba(147, 51, 234, 0.3) 50%, transparent 75%);
+  opacity: 0.7;
 }
 .voice-orb-container.state-processing .voice-orb {
-  background: radial-gradient(circle at 30% 30%, #e9d5ff, #a855f7 40%, #7e22ce 75%, #3b0764 100%);
-  animation: orb-think 1.4s ease-in-out infinite;
+  background: radial-gradient(circle at 30% 30%, #f3e8ff, #c084fc 35%, #7e22ce 70%, #2e1065 100%);
+  box-shadow: inset 0 0 35px rgba(255, 255, 255, 0.45), 0 0 50px rgba(168, 85, 247, 0.45);
+  animation: orb-think 1.3s ease-in-out infinite;
 }
 .voice-orb-container.state-processing .voice-orb::before,
 .voice-orb-container.state-processing .voice-orb::after {
-  background: radial-gradient(circle, rgba(216, 180, 254, 0.75), transparent 60%);
-  animation: orb-swirl 3.5s linear infinite;
+  background: radial-gradient(circle, rgba(233, 213, 255, 0.8), transparent 60%);
+  animation: orb-swirl 3.2s linear infinite;
 }
 .voice-orb-container.state-processing .voice-orb::after {
   animation-direction: reverse;
-  animation-duration: 4.5s;
+  animation-duration: 4.2s;
 }
 
-/* 4. SPEAKING STATE: Warm glowing rose/magenta/coral that dances with assistant voice */
+/* 4. SPEAKING STATE: Radiant rose magenta, sunset coral, and warm peach glow */
 .voice-orb-container.state-speaking {
-  filter: brightness(calc(1.1 + var(--level, 0) * 0.5)) drop-shadow(0 0 calc(24px + var(--level, 0) * 55px) rgba(244, 63, 94, calc(0.5 + var(--level, 0) * 0.5)));
+  filter: brightness(calc(1.15 + var(--level, 0) * 0.5)) drop-shadow(0 0 calc(28px + var(--level, 0) * 65px) rgba(244, 63, 94, calc(0.55 + var(--level, 0) * 0.45)));
+}
+.voice-orb-container.state-speaking .voice-orb-aura {
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.65), rgba(251, 113, 133, 0.35) 50%, transparent 75%);
+  opacity: calc(0.7 + var(--level, 0) * 0.3);
 }
 .voice-orb-container.state-speaking .voice-orb {
-  background: radial-gradient(circle at 30% 30%, #fecdd3, #f43f5e 40%, #be123c 75%, #4c0519 100%);
-  animation: orb-breathe 2s ease-in-out infinite;
+  background: radial-gradient(circle at 30% 30%, #ffe4e6, #fb7185 36%, #e11d48 70%, #4c0519 100%);
+  box-shadow: inset 0 0 35px rgba(255, 255, 255, 0.45), 0 0 55px rgba(244, 63, 94, 0.5);
+  animation: orb-breathe 1.8s ease-in-out infinite;
 }
 .voice-orb-container.state-speaking .voice-orb::before,
 .voice-orb-container.state-speaking .voice-orb::after {
-  background: radial-gradient(circle, rgba(253, 164, 175, 0.7), transparent 60%);
-  animation: orb-swirl 5s linear infinite;
+  background: radial-gradient(circle, rgba(254, 205, 211, 0.75), transparent 60%);
+  animation: orb-swirl 4.5s linear infinite;
 }
 .voice-orb-container.state-speaking .voice-orb::after {
   animation-direction: reverse;
-  animation-duration: 7s;
-  opacity: 0.8;
+  animation-duration: 6.5s;
+  opacity: 0.85;
 }
 
-/* 5. MUTED STATE: Subdued amber/zinc with warning glow */
+/* 5. MUTED STATE: Subdued smoky zinc with gentle warning pulse */
 .voice-orb-container.state-muted {
-  filter: brightness(0.85) drop-shadow(0 0 15px rgba(244, 63, 94, 0.25));
+  filter: brightness(0.85) drop-shadow(0 0 16px rgba(244, 63, 94, 0.25));
+}
+.voice-orb-container.state-muted .voice-orb-aura {
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.15), transparent 70%);
 }
 .voice-orb-container.state-muted .voice-orb {
   background: radial-gradient(circle at 35% 35%, #71717a, #3f3f46 60%, #18181b 100%);
+  box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.1);
   animation: none;
 }
 .voice-orb-container.state-muted .voice-orb::before,
 .voice-orb-container.state-muted .voice-orb::after {
-  background: radial-gradient(circle, rgba(244, 63, 94, 0.2), transparent 70%);
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.15), transparent 70%);
   animation: none;
   opacity: 0.3;
+}
+
+@keyframes orb-float {
+  0%, 100% {
+    transform: scale(calc(1 + var(--level, 0) * 0.35)) translateY(0px) translateZ(0);
+  }
+  50% {
+    transform: scale(calc(1 + var(--level, 0) * 0.35)) translateY(-5px) translateZ(0);
+  }
 }
 
 @keyframes orb-think {
@@ -1087,7 +1133,7 @@ button:focus-visible {
     transform: scale(0.96) translateZ(0);
   }
   50% {
-    transform: scale(1.06) translateZ(0);
+    transform: scale(1.07) translateZ(0);
   }
 }
 

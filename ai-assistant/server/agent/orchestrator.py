@@ -187,9 +187,12 @@ class AgentOrchestrator:
         if mode == "voice":
             system_instruction += (
                 "\n\nSPOKEN VOICE DELIVERY RULES:\n"
-                "1. Deliver your full answer naturally in clear, flowing spoken English.\n"
-                "2. NEVER output markdown symbols (no asterisks, hash signs, bullet points, or code backticks).\n"
-                "3. Speak warmly and engagingly like a human conversation partner."
+                "1. Talk, don't write: Speak in spontaneous, bite-sized conversational turns with contractions and natural transitions.\n"
+                "2. Keep responses tight: Deliver 1 to 3 concise spoken sentences per turn unless the user asks for a breakdown. Never monologue.\n"
+                "3. Zero Markdown & Formatting: Never output bold text, asterisks, bullet points, headers, or parenthetical stage directions.\n"
+                "4. Spell out symbols: Convert symbols into words (say 'five dollars' instead of '$5', 'ten percent' instead of '10%').\n"
+                "5. Active listening & reactive openings: Acknowledge the user warmly ('Gotcha', 'Makes sense', 'Definitely') before answering.\n"
+                "6. Back-and-forth: Treat conversation like a tennis rally. Answer the core and check in naturally."
             )
         else:
             system_instruction += (

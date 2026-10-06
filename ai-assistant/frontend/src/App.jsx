@@ -9,7 +9,8 @@ import VoiceModeModal from './components/VoiceModeModal.jsx';
 import LocationPrimingModal from './components/LocationPrimingModal.jsx';
 import ApiKeyModal from './components/ApiKeyModal.jsx';
 import WeatherChip from './components/WeatherChip.jsx';
-import KnowledgeManager from './components/KnowledgeManager.jsx';
+import GemsModal from './components/GemsModal.jsx';
+import { BUILTIN_GEMS } from './components/gemsData.js';
 import { TableBlock, CodeBlock, GeminiSparkle } from './components/MarkdownBlocks.jsx';
 import {
   getLocationPermissionStatus,
@@ -553,7 +554,49 @@ function App() {
   };
 
   // Active Gem Persona & Multimodal Attachment
-  const [activeGem, setActiveGem] = useState(null);
+  const [customGems, setCustomGems] = useState(() => {
+    try {
+      const stored = localStorage.getItem('gabby_custom_gems');
+      return stored ? JSON.parse(stored) : [];
+    } catch (_) {
+      return [];
+    }
+  });
+  const [activeGem, setActiveGem] = useState(() => {
+    try {
+      return localStorage.getItem('gabby_active_gem') || null;
+    } catch (_) {
+      return null;
+    }
+  });
+  const [activeGemObj, setActiveGemObj] = useState(null);
+  const [customSystemInstruction, setCustomSystemInstruction] = useState(null);
+
+  // Synchronize activeGemObj on initial mount or when customGems changes
+  useEffect(() => {
+    if (activeGem) {
+      const all = [...BUILTIN_GEMS, ...customGems];
+      const match = all.find((g) => g.id === activeGem || (activeGem.startsWith('custom:') && g.id === activeGem.replace('custom:', '')));
+      if (match) {
+        setActiveGemObj(match);
+        setCustomSystemInstruction(match.systemInstruction);
+      } else if (activeGem.startsWith('custom:')) {
+        const customPrompt = activeGem.slice(7);
+        setActiveGemObj({
+          id: activeGem,
+          name: 'Custom Persona',
+          tagline: customPrompt.slice(0, 50),
+          systemInstruction: customPrompt,
+          starterPrompts: []
+        });
+        setCustomSystemInstruction(customPrompt);
+      }
+    } else {
+      setActiveGemObj(null);
+      setCustomSystemInstruction(null);
+    }
+  }, [activeGem, customGems]);
+
   const [attachedImage, setAttachedImage] = useState(null);
   const imageInputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -1067,18 +1110,69 @@ function App() {
     e.target.value = '';
   };
 
-  // Gems Selection
-  const handleSelectGem = (gemId) => {
+  // Gems Selection & Custom Gem Management
+  const handleSelectGem = (gemId, systemInstruction = null, gemObj = null) => {
+    if (!gemId) {
+      setActiveGem(null);
+      setActiveGemObj(null);
+      setCustomSystemInstruction(null);
+      try {
+        localStorage.removeItem('gabby_active_gem');
+      } catch (_) {}
+      return;
+    }
     setActiveGem(gemId);
-    setIsGemsOpen(false);
-    const gemNames = {
-      code: 'Code Expert',
-      writing: 'Writing Assistant',
-      math: 'Math Tutor',
-      brainstorm: 'Creative Brainstormer',
-      research: 'Research Assistant'
-    };
-    toast.success(`Activated Gem: ${gemNames[gemId] || 'Custom Gem'}`);
+    try {
+      localStorage.setItem('gabby_active_gem', gemId);
+    } catch (_) {}
+
+    if (systemInstruction) {
+      setCustomSystemInstruction(systemInstruction);
+    }
+    if (gemObj) {
+      setActiveGemObj(gemObj);
+    } else {
+      const all = [...BUILTIN_GEMS, ...customGems];
+      const match = all.find((g) => g.id === gemId || (gemId.startsWith('custom:') && g.id === gemId.replace('custom:', '')));
+      if (match) {
+        setActiveGemObj(match);
+        setCustomSystemInstruction(match.systemInstruction);
+      }
+    }
+  };
+
+  const handleSaveCustomGem = (gem) => {
+    setCustomGems((prev) => {
+      const existsIndex = prev.findIndex((g) => g.id === gem.id);
+      let next;
+      if (existsIndex >= 0) {
+        next = [...prev];
+        next[existsIndex] = gem;
+      } else {
+        next = [gem, ...prev];
+      }
+      try {
+        localStorage.setItem('gabby_custom_gems', JSON.stringify(next));
+      } catch (_) {}
+      return next;
+    });
+    if (activeGem === gem.id) {
+      setActiveGemObj(gem);
+      setCustomSystemInstruction(gem.systemInstruction);
+    }
+  };
+
+  const handleDeleteCustomGem = (gemId) => {
+    setCustomGems((prev) => {
+      const next = prev.filter((g) => g.id !== gemId);
+      try {
+        localStorage.setItem('gabby_custom_gems', JSON.stringify(next));
+      } catch (_) {}
+      return next;
+    });
+    if (activeGem === gemId || (activeGem && activeGem.includes(gemId))) {
+      handleSelectGem(null);
+    }
   };
 
 
@@ -1286,6 +1380,7 @@ function App() {
         modelSelection: selectedModel,
         mode: 'chat',
         activeGem,
+        customSystemInstruction,
         attachedImage: currentImg,
         searchContext: searchContextStr,
         locationContext: locationContextStr,
@@ -1595,6 +1690,8 @@ function App() {
             chat_id: activeChatId || undefined,
             mode: 'voice',
             model: 'gemini-3.8-flash',
+            activeGem,
+            customSystemInstruction,
             conversationHistory: priorHistory,
             locationContext: locSummary,
             interruptedText: interruptedText || undefined,
@@ -1616,6 +1713,7 @@ function App() {
           modelSelection: 'gemini-3.8-flash',
           mode: 'voice',
           activeGem,
+          customSystemInstruction,
           locationContext: locSummary,
           signal: controller.signal,
           onResetBuffer: () => {
@@ -2277,8 +2375,26 @@ function App() {
             )}
           </div>
 
-          {/* Right: API Key, Rotate View, Live Voice mode, and New chat button */}
+          {/* Right: Gems, API Key, Rotate View, Live Voice mode, and New chat button */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Gems & AI Personas Button */}
+            <button
+              type="button"
+              onClick={() => setIsGemsOpen(true)}
+              className={`tap-target sm:w-auto sm:px-3 sm:py-1.5 rounded-full border transition-all flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation ${
+                activeGem
+                  ? 'bg-purple-500/15 border-purple-500/35 text-purple-300 hover:bg-purple-500/25'
+                  : 'border-white/10 hover:border-white/20 text-[#8a8a8e] hover:text-white bg-transparent'
+              }`}
+              title={activeGem ? `Active Gem: ${activeGemObj?.name || 'Custom Gem'} (Click to manage)` : 'Select or Create AI Persona Gem'}
+              aria-label="Gems & AI Personas"
+            >
+              <Gem className="icon-md text-purple-400" />
+              <span className="text-[var(--text-xs)] font-medium hidden sm:inline">
+                {activeGemObj ? activeGemObj.name : 'Gems'}
+              </span>
+            </button>
+
             {/* Custom Gemini API Key Button */}
             <button
               type="button"
@@ -2340,42 +2456,95 @@ function App() {
           {messages.length === 0 ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-3 sm:p-6 overflow-y-auto custom-scrollbar">
               <div className="max-w-4xl w-full flex flex-col items-start space-y-3 sm:space-y-6 md:space-y-8 animate-fade-in my-auto pb-20 sm:pb-28">
-                {/* Gemini Signature Heading */}
-                <div className="space-y-2 text-left px-1 sm:px-2">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-2xl bg-white/[0.04] border border-white/5 shadow-inner mb-1">
-                    <GeminiSparkle className="w-6 h-6 sm:w-8 sm:h-8" animated={true} />
+                {/* Gemini Signature Heading or Active Gem Persona Greeting */}
+                {activeGemObj ? (
+                  <div className="space-y-2 text-left px-1 sm:px-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-2xl bg-purple-500/10 border border-purple-500/20 shadow-inner">
+                        <Gem className="w-6 h-6 sm:w-7 sm:h-7 text-purple-400" />
+                      </div>
+                      <span className="text-[11px] uppercase tracking-wider font-semibold text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full">
+                        Gem Persona
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectGem(null)}
+                        className="text-xs text-[#8a8a8e] hover:text-white underline ml-1 cursor-pointer"
+                        title="Reset to default Gabby"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <h1 className="text-xl sm:text-3xl md:text-5xl lg:text-6xl font-medium tracking-tight bg-gradient-to-r from-purple-400 via-pink-400 to-amber-300 bg-clip-text text-transparent">
+                      {activeGemObj.name}
+                    </h1>
+                    <h2 className="text-sm sm:text-xl md:text-2xl font-normal text-[#a8aaa8]">
+                      {activeGemObj.tagline || 'Specialized AI Persona'}
+                    </h2>
                   </div>
-                  <h1 className="text-xl sm:text-3xl md:text-5xl lg:text-6xl font-medium tracking-tight bg-gradient-to-r from-[#4E80EE] via-[#9B72CF] to-[#E275AA] bg-clip-text text-transparent">
-                    Hello, Gabriel
-                  </h1>
-                  <h2 className="text-sm sm:text-2xl md:text-3xl lg:text-4xl font-medium text-[#757775]">
-                    How can I help you today?
-                  </h2>
-                </div>
+                ) : (
+                  <div className="space-y-2 text-left px-1 sm:px-2">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-2xl bg-white/[0.04] border border-white/5 shadow-inner mb-1">
+                      <GeminiSparkle className="w-6 h-6 sm:w-8 sm:h-8" animated={true} />
+                    </div>
+                    <h1 className="text-xl sm:text-3xl md:text-5xl lg:text-6xl font-medium tracking-tight bg-gradient-to-r from-[#4E80EE] via-[#9B72CF] to-[#E275AA] bg-clip-text text-transparent">
+                      Hello, Gabriel
+                    </h1>
+                    <h2 className="text-sm sm:text-2xl md:text-3xl lg:text-4xl font-medium text-[#757775]">
+                      How can I help you today?
+                    </h2>
+                  </div>
+                )}
 
-                {/* Gemini 4 Suggestion Cards in a 2x2 grid on mobile, 4 in a row on desktop */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3.5 w-full">
-                  <SuggestionCard
-                    icon={FileText}
-                    title="Help me write"
-                    description="a professional thank-you email after a job interview"
-                  />
-                  <SuggestionCard
-                    icon={GeminiSparkle}
-                    title="Brainstorm ideas"
-                    description="for a modern high-performance AI web application"
-                  />
-                  <SuggestionCard
-                    icon={HelpCircle}
-                    title="Explain a concept"
-                    description="how neural networks understand natural language"
-                  />
-                  <SuggestionCard
-                    icon={Code}
-                    title="Code & debug"
-                    description="write a python script to parse and organize files"
-                  />
-                </div>
+                {/* Suggestion Cards: Active Gem Starter Prompts or Gemini Default Cards */}
+                {activeGemObj && activeGemObj.starterPrompts && activeGemObj.starterPrompts.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3.5 w-full">
+                    {activeGemObj.starterPrompts.slice(0, 3).map((promptText, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleSuggestionClick(promptText)}
+                        className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-[#1e1f20] hover:bg-[#282a2c] text-left transition-all border border-purple-500/20 hover:border-purple-500/40 group cursor-pointer flex flex-col justify-between min-h-[72px] sm:min-h-[100px] shadow-sm relative overflow-hidden"
+                      >
+                        <div>
+                          <h3 className="text-[11.5px] sm:text-sm font-medium text-[#e3e3e3] mb-1 group-hover:text-purple-300 transition-colors line-clamp-1">
+                            {activeGemObj.name}
+                          </h3>
+                          <p className="text-[11px] sm:text-xs text-[#a8aaa8] line-clamp-2 leading-relaxed">
+                            {promptText}
+                          </p>
+                        </div>
+                        <div className="flex justify-end mt-2 sm:mt-auto">
+                          <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-purple-500/10 flex items-center justify-center text-purple-300 group-hover:scale-110 group-hover:text-white transition-all border border-purple-500/20">
+                            <Gem size={12} />
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3.5 w-full">
+                    <SuggestionCard
+                      icon={FileText}
+                      title="Help me write"
+                      description="a professional thank-you email after a job interview"
+                    />
+                    <SuggestionCard
+                      icon={GeminiSparkle}
+                      title="Brainstorm ideas"
+                      description="for a modern high-performance AI web application"
+                    />
+                    <SuggestionCard
+                      icon={HelpCircle}
+                      title="Explain a concept"
+                      description="how neural networks understand natural language"
+                    />
+                    <SuggestionCard
+                      icon={Code}
+                      title="Code & debug"
+                      description="write a python script to parse and organize files"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -2689,6 +2858,41 @@ function App() {
             />
 
             <form onSubmit={handleSubmit} className="relative bg-[#1e1f20] rounded-[22px] sm:rounded-[26px] border border-white/10 focus-within:border-white/25 transition-all shadow-2xl p-2.5 sm:p-3">
+              {/* Active Gem Persona Pill Indicator */}
+              {activeGemObj && (
+                <div className="mb-2 flex items-center justify-between bg-purple-500/10 border border-purple-500/25 rounded-xl px-2.5 py-1 text-purple-300">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Gem size={13} className="shrink-0 text-purple-400" />
+                    <span className="text-[11px] font-medium truncate">
+                      Persona: <strong className="text-purple-200">{activeGemObj.name}</strong>
+                    </span>
+                    {activeGemObj.category && (
+                      <span className="hidden sm:inline text-[9px] uppercase tracking-wider bg-purple-500/20 px-1.5 py-0.5 rounded font-semibold text-purple-300">
+                        {activeGemObj.category}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsGemsOpen(true)}
+                      className="text-[10px] text-purple-300/80 hover:text-purple-100 hover:underline px-1 py-0.5 cursor-pointer"
+                    >
+                      Change
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectGem(null)}
+                      className="p-0.5 rounded-full hover:bg-purple-500/20 text-purple-400 hover:text-white transition-colors cursor-pointer"
+                      title="Remove active Gem"
+                      aria-label="Remove active Gem"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {attachedImage && (
                 <div className="mb-2 pb-2 pt-1 flex items-center gap-3 border-b border-white/5 bg-white/[0.02] rounded-xl px-2.5 py-1.5">
                   <div className="image-preview relative inline-block shrink-0 mt-1 mr-1">
@@ -2771,6 +2975,22 @@ function App() {
                     <Globe className={`icon-sm ${isSearchEnabled ? 'text-[#70CFFF]' : 'text-[#8a8a8e]'}`} />
                     <span>Search</span>
                     {isSearchEnabled && <span className="w-1.5 h-1.5 rounded-full bg-[#70CFFF] animate-pulse" />}
+                  </button>
+
+                  {/* Gems Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsGemsOpen(true)}
+                    className={`inline-flex items-center gap-1.5 min-h-[var(--tap-target)] px-2.5 sm:px-3 py-1.5 rounded-full text-[var(--text-xs)] font-medium transition-all shrink-0 cursor-pointer border touch-manipulation ${
+                      activeGem
+                        ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                        : 'bg-white/[0.04] text-[#8a8a8e] border-white/10 hover:text-[#e8e8e8] hover:bg-white/[0.08]'
+                    }`}
+                    title="Manage AI Persona Gems"
+                  >
+                    <Gem className={`icon-sm ${activeGem ? 'text-purple-300' : 'text-[#8a8a8e]'}`} />
+                    <span className="hidden xs:inline sm:inline">{activeGemObj ? activeGemObj.name : 'Gems'}</span>
+                    {activeGem && <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />}
                   </button>
                 </div>
 
@@ -3021,180 +3241,16 @@ function App() {
         </div>
       )}
 
-      {/* Gems Panel */}
-      {isGemsOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-md"
-            onClick={() => setIsGemsOpen(false)}
-          />
-
-          {/* Panel */}
-          <div className="relative w-full max-w-md h-full bg-[#1E1E1E] shadow-2xl animate-slide-in flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-white/10">
-              <div className="flex items-center gap-3">
-                <Gem size={20} className="text-purple-400" />
-                <h2 className="text-lg font-semibold text-white">Gems</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                {activeGem && (
-                  <button
-                    onClick={() => {
-                      setActiveGem(null);
-                      toast('Reset to default Gemini persona', { icon: '✨' });
-                    }}
-                    className="text-xs text-purple-300 hover:text-white px-2 py-1 rounded-md bg-purple-500/20 border border-purple-500/30 transition-colors cursor-pointer"
-                  >
-                    Reset
-                  </button>
-                )}
-                <button
-                  onClick={() => setIsGemsOpen(false)}
-                  className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors cursor-pointer"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-              <p className="text-sm text-gray-400 mb-4">Select a specialized AI persona to configure Gabby's intelligence</p>
-
-              {/* Gem Cards */}
-              <button
-                onClick={() => handleSelectGem('code')}
-                className={`w-full p-4 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border transition-all text-left group cursor-pointer ${
-                  activeGem === 'code' ? 'border-purple-400 bg-purple-500/20' : 'border-purple-500/30 hover:border-purple-400/50'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
-                    <Code size={20} className="text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-white font-medium mb-1">Code Expert</h3>
-                      {activeGem === 'code' && (
-                        <span className="text-[10px] bg-purple-500/40 text-purple-200 px-2 py-0.5 rounded-full font-semibold">Active</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-400">Specialized in programming, debugging, architecture, and code reviews</p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => handleSelectGem('writing')}
-                className={`w-full p-4 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border transition-all text-left group cursor-pointer ${
-                  activeGem === 'writing' ? 'border-blue-400 bg-blue-500/20' : 'border-blue-500/30 hover:border-blue-400/50'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shrink-0">
-                    <FileText size={20} className="text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-white font-medium mb-1">Writing Assistant</h3>
-                      {activeGem === 'writing' && (
-                        <span className="text-[10px] bg-blue-500/40 text-blue-200 px-2 py-0.5 rounded-full font-semibold">Active</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-400">Expert in creative writing, editing, copywriting, and storytelling</p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => handleSelectGem('math')}
-                className={`w-full p-4 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border transition-all text-left group cursor-pointer ${
-                  activeGem === 'math' ? 'border-green-400 bg-green-500/20' : 'border-green-500/30 hover:border-green-400/50'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center shrink-0">
-                    <Calculator size={20} className="text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-white font-medium mb-1">Math Tutor</h3>
-                      {activeGem === 'math' && (
-                        <span className="text-[10px] bg-green-500/40 text-green-200 px-2 py-0.5 rounded-full font-semibold">Active</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-400">Step-by-step math solver, proofs, calculations, and STEM reasoning</p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => handleSelectGem('brainstorm')}
-                className={`w-full p-4 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border transition-all text-left group cursor-pointer ${
-                  activeGem === 'brainstorm' ? 'border-orange-400 bg-orange-500/20' : 'border-orange-500/30 hover:border-orange-400/50'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#1e1f20] border border-orange-500/40 flex items-center justify-center shrink-0">
-                    <GeminiSparkle className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-white font-medium mb-1">Creative Brainstormer</h3>
-                      {activeGem === 'brainstorm' && (
-                        <span className="text-[10px] bg-orange-500/40 text-orange-200 px-2 py-0.5 rounded-full font-semibold">Active</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-400">Out-of-the-box conceptual thinking, innovative strategies, and ideas</p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => handleSelectGem('research')}
-                className={`w-full p-4 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border transition-all text-left group cursor-pointer ${
-                  activeGem === 'research' ? 'border-indigo-400 bg-indigo-500/20' : 'border-indigo-500/30 hover:border-indigo-400/50'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center shrink-0">
-                    <Search size={20} className="text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-white font-medium mb-1">Research Assistant</h3>
-                      {activeGem === 'research' && (
-                        <span className="text-[10px] bg-indigo-500/40 text-indigo-200 px-2 py-0.5 rounded-full font-semibold">Active</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-400">Deep academic synthesis, fact-checking, literature review, and citations</p>
-                  </div>
-                </div>
-              </button>
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-white/10">
-              <button
-                onClick={() => {
-                  const customPersona = prompt('Enter a custom instruction or persona for Gabby:');
-                  if (customPersona && customPersona.trim()) {
-                    setActiveGem('custom:' + customPersona.trim());
-                    setIsGemsOpen(false);
-                    toast.success('Custom Gem persona activated!');
-                  }
-                }}
-                className="w-full px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Plus size={16} />
-                Create Custom Gem
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Gems & AI Personas Modal */}
+      <GemsModal
+        isOpen={isGemsOpen}
+        onClose={() => setIsGemsOpen(false)}
+        activeGem={activeGem}
+        onSelectGem={handleSelectGem}
+        customGems={customGems}
+        onSaveCustomGem={handleSaveCustomGem}
+        onDeleteCustomGem={handleDeleteCustomGem}
+      />
 
       {/* Settings & Help Panel */}
       {isSettingsOpen && (

@@ -151,21 +151,37 @@ You are currently operating in REAL-TIME SPOKEN VOICE MODE. Your outputs will be
 - Listen only to the voice closest to the microphone and ignore audio from device speakers.
 - Maintain one active speaker at a time: either the user or the assistant.`;
 
-  let baseIntelligence = "You are Gabby, an advanced AI assistant with DeepSeek/ChatGPT-level depth, reasoning, and precision. Provide insightful, thorough, and highly articulate answers. Structure complex responses with clear numbered headings ('1. ...', '2. ...'), concise paragraphs, round bullet points with bold lead-ins, clean code blocks, and markdown tables where data is presented. Avoid filler.";
-
-  if (activeGem === 'code') {
-    baseIntelligence = "You are Code Expert, an elite senior software architect and programmer. Write modular, robust, clean code with detailed explanations, edge cases, and best practices.";
+  let personaIntelligence = null;
+  if (customSystemInstruction) {
+    personaIntelligence = customSystemInstruction;
+  } else if (typeof activeGem === 'string' && activeGem.startsWith('custom:')) {
+    personaIntelligence = activeGem.slice(7);
+  } else if (activeGem === 'code') {
+    personaIntelligence = "You are Code Expert, an elite senior software architect and programmer. Write modular, robust, clean code with detailed explanations, edge cases, and best practices.";
   } else if (activeGem === 'writing') {
-    baseIntelligence = "You are Writing Assistant, a master editor and creative writer. Deliver compelling, polished, evocative prose, essays, articles, and communication.";
+    personaIntelligence = "You are Writing Assistant, a master editor and creative writer. Deliver compelling, polished, evocative prose, essays, articles, and communication.";
   } else if (activeGem === 'math') {
-    baseIntelligence = "You are Math Tutor, a brilliant mathematician and educator. Solve complex mathematical problems step-by-step with proofs, intuition, and clear explanations.";
+    personaIntelligence = "You are Math Tutor, a brilliant mathematician and educator. Solve complex mathematical problems step-by-step with proofs, intuition, and clear explanations.";
   } else if (activeGem === 'brainstorm') {
-    baseIntelligence = "You are Creative Brainstormer, an imaginative strategist and innovator. Generate fresh, disruptive, multi-angle ideas and creative frameworks.";
+    personaIntelligence = "You are Creative Brainstormer, an imaginative strategist and innovator. Generate fresh, disruptive, multi-angle ideas and creative frameworks.";
   } else if (activeGem === 'research') {
-    baseIntelligence = "You are Research Assistant, a rigorous researcher and analytical scientist. Deliver in-depth, fact-checked, structured analysis and synthesis.";
+    personaIntelligence = "You are Research Assistant, a rigorous researcher and analytical scientist. Deliver in-depth, fact-checked, structured analysis and synthesis.";
+  } else if (activeGem === 'data') {
+    personaIntelligence = "You are Data & SQL Architect, an expert in database design, performance tuning, data modeling, and query optimization.";
+  } else if (activeGem === 'polyglot') {
+    personaIntelligence = "You are Language Polyglot, a master linguist and translator fluent in nuances, cultural idioms, and high-fidelity translation.";
+  } else if (activeGem === 'coach') {
+    personaIntelligence = "You are Executive Coach, a seasoned mentor and strategist specializing in leadership, negotiation, clarity, and decision frameworks.";
   }
 
-  const systemInstructionText = customSystemInstruction || (mode === 'voice' ? voiceSystemPrompt : baseIntelligence);
+  let systemInstructionText = '';
+  if (mode === 'voice') {
+    systemInstructionText = personaIntelligence
+      ? `${voiceSystemPrompt}\n\n### SPECIALIST PERSONA EXPERTISE & TONE:\nAdopt the following domain expertise and perspective while strictly maintaining all spoken voice constraints:\n${personaIntelligence}`
+      : voiceSystemPrompt;
+  } else {
+    systemInstructionText = personaIntelligence || baseIntelligence;
+  }
 
   let primaryModel = 'gemini-3.8-flash';
   let fallbackModels = [

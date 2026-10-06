@@ -1,19 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { X, Key, ExternalLink, Check, Trash2, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function ApiKeyModal({ isOpen, onClose }) {
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('gabby_gemini_api_key') || '' : ''));
   const [showKey, setShowKey] = useState(false);
-  const [savedKeyExists, setSavedKeyExists] = useState(false);
+  const [savedKeyExists, setSavedKeyExists] = useState(() => (typeof window !== 'undefined' ? !!localStorage.getItem('gabby_gemini_api_key') : false));
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
 
-  useEffect(() => {
-    if (isOpen) {
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
+    if (isOpen && typeof window !== 'undefined') {
       const stored = localStorage.getItem('gabby_gemini_api_key') || '';
       setApiKey(stored);
       setSavedKeyExists(!!stored);
     }
-  }, [isOpen]);
+  }
 
   if (!isOpen) return null;
 

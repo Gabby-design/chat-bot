@@ -169,23 +169,22 @@ You are currently operating in REAL-TIME SPOKEN VOICE MODE. Your outputs will be
 
   let primaryModel = 'gemini-3.8-flash';
   let fallbackModels = [
-    'gemini-3.6-flash',
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
     'gemini-flash-lite-latest',
     'gemini-3.7-flash',
-    'gemini-3.5-flash'
+    'gemini-3.6-flash'
   ];
   let generationConfig = undefined;
 
   if (mode === 'voice') {
     primaryModel = 'gemini-3.8-flash';
     fallbackModels = [
-      'gemini-3.6-flash',
       'gemini-3.5-flash-lite',
       'gemini-3.1-flash-lite',
       'gemini-flash-lite-latest',
-      'gemini-3.7-flash'
+      'gemini-3.7-flash',
+      'gemini-3.6-flash'
     ];
     generationConfig = {
       temperature: 0.5,
@@ -195,11 +194,12 @@ You are currently operating in REAL-TIME SPOKEN VOICE MODE. Your outputs will be
   } else if (model === 'advanced') {
     primaryModel = 'gemini-3.8-flash';
     fallbackModels = [
-      'gemini-3.6-flash',
-      'gemini-3.1-pro-preview',
       'gemini-3.5-flash-lite',
       'gemini-3.1-flash-lite',
-      'gemini-3.7-flash'
+      'gemini-flash-lite-latest',
+      'gemini-3.1-pro-preview',
+      'gemini-3.7-flash',
+      'gemini-3.6-flash'
     ];
   } else if (model === 'fast' || model === 'lite') {
     primaryModel = 'gemini-3.5-flash-lite';
@@ -363,9 +363,15 @@ ${finalPrompt}`;
             message: specificMsg
           };
 
-          // On authentication failure or rate limit, immediately failover to next candidate key
-          if (upstream.status === 401 || upstream.status === 403 || upstream.status === 429) {
+          // On authentication failure, immediately failover to next candidate key
+          if (upstream.status === 401 || upstream.status === 403) {
             continue candidateLoop;
+          }
+
+          // On rate limit (429) or high demand (503), try next fallback model first.
+          // Gemini quotas and rate limits are model-specific; flash-lite models frequently succeed.
+          if (upstream.status === 429) {
+            continue;
           }
 
           if (upstream.status === 503) {

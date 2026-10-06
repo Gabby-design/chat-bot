@@ -13,7 +13,8 @@
 - Fixed SQLite schema migration in `database.py`: replaced invalid `ALTER TABLE ... DEFAULT CURRENT_TIMESTAMP` with valid SQLite syntax and backfill, resolving `OperationalError: no such column: updated_at`.
 - Fixed `main.py` dotenv loading: resolved `.env` path via `__file__` so `server/.env` is reliably discovered across working directories.
 - Upgraded Spoken Voice Mode: integrated Gemini Live oral fluency prompt (bite-sized turns, contractions, symbol expansion, zero markdown, empathetic reactive openings, conversational ball-toss turn-taking, single-speaker microphone isolation) across serverless and orchestrator runtimes; redesigned Voice Orb with fluid multi-layered plasma aura, organic floating physics, and frosted glass status indicators.
-- Full production verification on Vercel (`https://gabby-ai-appgabby-v2.vercel.app`): static bundle, chat streaming, voice streaming, neural TTS, Wikipedia search, and weather APIs verified with 100% pass rate. Local test suite passing cleanly, frontend build with 0 errors.
+- Implemented Custom Gems & AI Persona Builder: 8 built-in personas (Code Expert, Writing Assistant, Math Tutor, Brainstormer, Research Analyst, Data & SQL Architect, Language Polyglot, Executive Coach), rich Gem Builder modal drawer with icon/color customization, AI-assisted prompt drafting, export/import JSON, dynamic empty-state greeting & custom starter prompt cards, input pill indicator, and live streaming injection for both chat and spoken voice modes.
+- Full production verification on Vercel (`https://gabby-ai-appgabby-v2.vercel.app`): static bundle, chat streaming, voice streaming, neural TTS, custom gem persona resolution, Wikipedia search, and weather APIs verified with 100% pass rate. Local test suite passing cleanly, frontend build with 0 errors.
 
 ## Fixed Decisions
 

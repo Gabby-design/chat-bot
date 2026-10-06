@@ -9,7 +9,7 @@ last_reviewed: "2026-10-06"
 
 # Plan — Custom Gems and AI Persona Builder
 
-**Status:** active · **Classification:** feature · **Source:** User explicit request · **Owner approval:** 2026-10-06
+**Status:** complete · **Classification:** feature · **Source:** User explicit request · **Owner approval:** 2026-10-06
 
 ## Objective
 Provide a full-featured Gems & AI Persona Builder allowing users to select built-in specialist personas, build, edit, prompt-engineer, test, and persist custom specialist Gems in Gabby, with dynamic prompt injection into both chat streaming and spoken voice modes.
@@ -31,7 +31,7 @@ Provide a full-featured Gems & AI Persona Builder allowing users to select built
 | T2 | Update `App.jsx` integration | Active Gem pill in header/input, custom starter cards in empty state, state management | done |
 | T3 | Update `api/chat/stream.js` and frontend copy | Full persona resolution for built-in and custom gems in chat and voice mode | done |
 | T4 | Verification & Quality Gates | `npm run lint` and `npm run build` pass with 0 errors; live test verified | done |
-| T5 | Deploy & Live Verification | Push to GitHub `origin/main`, test on Vercel production | in-progress |
+| T5 | Deploy & Live Verification | Push to GitHub `origin/main`, test on Vercel production | done |
 
 ## Verification
 - ESLint: 0 errors

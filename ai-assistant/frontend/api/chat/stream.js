@@ -32,7 +32,7 @@ function checkRateLimit(ip) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-gemini-api-key, Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -53,8 +53,10 @@ export default async function handler(req, res) {
     return res.end();
   }
 
-  // Credentials are owned by the application owner on the server runtime only
-  const rawKey = process.env.GEMINI_API_KEY ||
+  // Resolve API key: accept client override header/body if present, otherwise fallback to server environment
+  const clientKey = req.headers['x-gemini-api-key'] || req.body?.apiKey;
+  const rawKey = clientKey ||
+                 process.env.GEMINI_API_KEY ||
                  process.env.GOOGLE_API_KEY ||
                  process.env.GEMINI_KEY ||
                  process.env.API_KEY ||

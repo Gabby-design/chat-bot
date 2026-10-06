@@ -35,7 +35,7 @@ function pcmToWavBuffer(cleanBase64, sampleRate = 24000, numChannels = 1) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-gemini-api-key, Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -45,7 +45,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const rawKey = process.env.GEMINI_API_KEY ||
+  const clientKey = req.headers['x-gemini-api-key'] || req.body?.apiKey;
+  const rawKey = clientKey ||
+                 process.env.GEMINI_API_KEY ||
                  process.env.GOOGLE_API_KEY ||
                  process.env.GEMINI_KEY ||
                  process.env.API_KEY ||

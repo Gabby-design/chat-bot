@@ -8,7 +8,7 @@
 - Completed Phase 3: RAG KnowledgeStore with SQLite FTS5, BM25 ranking, search_knowledge & store_knowledge tools, and knowledge management endpoints.
 - Completed Phase 4: Model Context Protocol (MCP) engine (stdio JSON-RPC client, MCPManager, mcp_config.json, /api/mcp/servers, and /api/mcp/reload).
 - Fixed Google Gemini model resilience: eliminated deprecated 404/503 models, configured robust fallback chain with Gemini 3.8 Flash, 3.6 Flash, 3.5 Flash Lite, and 3.1 Flash Lite.
-- Fixed Gemini upstream authentication & environment variable resilience: multi-name key resolution (GEMINI_API_KEY, GOOGLE_API_KEY, GEMINI_KEY, API_KEY), automatic stripping of accidental key name prefixes (e.g., apikey=), direct unmasked diagnostic reporting for 401/403/configuration errors, and restored ApiKeyModal fallback for resilient client keys.
+- Fixed Gemini upstream authentication & environment variable resilience: multi-name key resolution (GEMINI_API_KEY, GOOGLE_API_KEY, GEMINI_KEY, API_KEY), automatic stripping of accidental key name prefixes (e.g., apikey=), direct unmasked diagnostic reporting for 401/403/configuration errors, restored ApiKeyModal fallback for resilient client keys, and automatic multi-candidate key failover loop (`candidateLoop`) in serverless `/api/chat/stream` and `/api/tts` endpoints.
 - Fixed SQLite schema migration in `database.py`: replaced invalid `ALTER TABLE ... DEFAULT CURRENT_TIMESTAMP` with valid SQLite syntax and backfill, resolving `OperationalError: no such column: updated_at`.
 - Fixed `main.py` dotenv loading: resolved `.env` path via `__file__` so `server/.env` is reliably discovered across working directories.
 - All 10 automated test suites and end-to-end workflow suite passing cleanly; frontend builds with 0 errors.

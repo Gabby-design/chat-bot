@@ -7,12 +7,13 @@
 - Completed Phase 2: Orchestrator package exports & /api/agent/task planning endpoint.
 - Completed Phase 3: RAG KnowledgeStore with SQLite FTS5, BM25 ranking, search_knowledge & store_knowledge tools, and knowledge management endpoints.
 - Completed Phase 4: Model Context Protocol (MCP) engine (stdio JSON-RPC client, MCPManager, mcp_config.json, /api/mcp/servers, and /api/mcp/reload).
-- Fixed Google Gemini model resilience: eliminated deprecated 404/503 models, configured robust fallback chain with Gemini 3.8 Flash, 3.6 Flash, 3.5 Flash Lite, and 3.1 Flash Lite.
+- Fixed Google Gemini model resilience & quota failover: prioritized high-availability models (`gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-flash-lite-latest`) before rate-limited models (`gemini-3.6-flash`), and decoupled HTTP 429 errors from key termination so candidate keys test all available models.
 - Fixed Gemini upstream authentication & environment variable resilience: multi-name key resolution (GEMINI_API_KEY, GOOGLE_API_KEY, GEMINI_KEY, API_KEY), automatic stripping of accidental key name prefixes (e.g., apikey=), direct unmasked diagnostic reporting for 401/403/configuration errors, restored ApiKeyModal fallback for resilient client keys, and automatic multi-candidate key failover loop (`candidateLoop`) in serverless `/api/chat/stream` and `/api/tts` endpoints.
+- Fixed Wikipedia search proxy: added compliant User-Agent header ensuring fallback search succeeds on serverless environments without blocking.
 - Fixed SQLite schema migration in `database.py`: replaced invalid `ALTER TABLE ... DEFAULT CURRENT_TIMESTAMP` with valid SQLite syntax and backfill, resolving `OperationalError: no such column: updated_at`.
 - Fixed `main.py` dotenv loading: resolved `.env` path via `__file__` so `server/.env` is reliably discovered across working directories.
-- Upgraded Spoken Voice Mode: integrated Gemini Live oral fluency prompt (bite-sized turns, contractions, symbol expansion, zero markdown, empathetic reactive openings) across serverless and orchestrator runtimes; redesigned Voice Orb with fluid multi-layered plasma aura, organic floating physics, and frosted glass status indicators.
-- All 10 automated test suites and end-to-end workflow suite passing cleanly; frontend builds with 0 errors.
+- Upgraded Spoken Voice Mode: integrated Gemini Live oral fluency prompt (bite-sized turns, contractions, symbol expansion, zero markdown, empathetic reactive openings, conversational ball-toss turn-taking, single-speaker microphone isolation) across serverless and orchestrator runtimes; redesigned Voice Orb with fluid multi-layered plasma aura, organic floating physics, and frosted glass status indicators.
+- Full production verification on Vercel (`https://gabby-ai-appgabby-v2.vercel.app`): static bundle, chat streaming, voice streaming, neural TTS, Wikipedia search, and weather APIs verified with 100% pass rate. Local test suite passing cleanly, frontend build with 0 errors.
 
 ## Fixed Decisions
 

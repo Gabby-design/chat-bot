@@ -42,6 +42,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  try {
+
   // Rate limiting for public endpoint protection
   const clientIp = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
   if (!checkRateLimit(clientIp)) {
@@ -173,6 +175,8 @@ You are currently operating in REAL-TIME SPOKEN VOICE MODE. Your outputs will be
   } else if (activeGem === 'coach') {
     personaIntelligence = "You are Executive Coach, a seasoned mentor and strategist specializing in leadership, negotiation, clarity, and decision frameworks.";
   }
+
+  const baseIntelligence = "You are Gabby, a state-of-the-art AI assistant with top-tier intelligence, clarity, and depth—equivalent to ChatGPT Plus. You are extraordinarily knowledgeable, insightful, articulate, and thoughtful. You adapt seamlessly to any domain: deep coding, complex reasoning, creative writing, science, mathematics, analysis, and everyday chat. Be direct, thorough, and smart, avoiding unnecessary fluff while providing high-value, accurate insights.";
 
   let systemInstructionText = '';
   if (mode === 'voice') {
@@ -458,4 +462,15 @@ ${finalPrompt}`;
 
   res.write(`data: ${JSON.stringify({ error: userErrorMsg })}\n\n`);
   return res.end();
+  } catch (fatalErr) {
+    console.error('[Chat Stream Fatal Error]:', fatalErr);
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+    }
+    res.write(`data: ${JSON.stringify({ error: fatalErr.message || 'Internal server error' })}\n\n`);
+    res.write('data: [DONE]\n\n');
+    return res.end();
+  }
 }

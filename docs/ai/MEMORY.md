@@ -4,6 +4,8 @@
 
 ## Current Position
 
+- Owner: **Master** (address as Master across all sessions)
+
 - Completed Phase 2: Orchestrator package exports & /api/agent/task planning endpoint.
 - Completed Phase 3: RAG KnowledgeStore with SQLite FTS5, BM25 ranking, search_knowledge & store_knowledge tools, and knowledge management endpoints.
 - Completed Phase 4: Model Context Protocol (MCP) engine (stdio JSON-RPC client, MCPManager, mcp_config.json, /api/mcp/servers, and /api/mcp/reload).
@@ -14,6 +16,7 @@
 - Fixed `main.py` dotenv loading: resolved `.env` path via `__file__` so `server/.env` is reliably discovered across working directories.
 - Upgraded Spoken Voice Mode: integrated Gemini Live oral fluency prompt (bite-sized turns, contractions, symbol expansion, zero markdown, empathetic reactive openings, conversational ball-toss turn-taking, single-speaker microphone isolation) across serverless and orchestrator runtimes; redesigned Voice Orb with fluid multi-layered plasma aura, organic floating physics, and frosted glass status indicators.
 - Implemented Custom Gems & AI Persona Builder: 8 built-in personas (Code Expert, Writing Assistant, Math Tutor, Brainstormer, Research Analyst, Data & SQL Architect, Language Polyglot, Executive Coach), rich Gem Builder modal drawer with icon/color customization, AI-assisted prompt drafting, export/import JSON, dynamic empty-state greeting & custom starter prompt cards, input pill indicator, and live streaming injection for both chat and spoken voice modes.
+- Fixed serverless `/api/chat/stream` 500 error: restored missing `baseIntelligence` prompt definition in `api/chat/stream.js` and `ai-assistant/frontend/api/chat/stream.js`, added top-level try/catch blocks for reliable SSE error reporting.
 - Full production verification on Vercel (`https://gabby-ai-appgabby-v2.vercel.app`): static bundle, chat streaming, voice streaming, neural TTS, custom gem persona resolution, Wikipedia search, and weather APIs verified with 100% pass rate. Local test suite passing cleanly, frontend build with 0 errors.
 
 ## Fixed Decisions
